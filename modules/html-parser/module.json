@@ -1,0 +1,16 @@
+{
+  "manifest_version": 1,
+  "name": "web-scraping-html-parser",
+  "version": "0.1.0",
+  "description": "Reusable HTML parsing for web-scraping workflows.",
+  "language": "Python",
+  "status": "scaffold",
+  "package": "web_scraping_html_parser",
+  "use_cases": [
+    "Extract structured information from HTML documents."
+  ],
+  "permissions": {
+    "network": false
+  },
+  "dependencies": []
+}
