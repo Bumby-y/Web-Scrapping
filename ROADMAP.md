@@ -69,22 +69,17 @@ composed repeatedly across local and cloud solutions.
 
 - [x] Document the crawler's goals, ownership boundaries, non-goals, and
   intended initial implementation scope.
-- [ ] Define crawl inputs, outputs, scope, limits, and stopping behavior as a
-  public API contract.
-- [ ] Implement deterministic frontier and visited-URL coordination without
-  requiring network access or durable storage.
-- [ ] Define narrow persistence contracts for crawl state and, if needed,
-  content references; keep backend selection outside crawl policy.
-- [ ] Define retrieval and link-discovery collaborator contracts without
-  embedding HTTP transport or HTML parsing into crawl coordination.
-- [ ] Decide how URL normalization, duplicate tracking, and robots directives
-  are handled.
-- [ ] Keep network access, rate limits, and crawl bounds explicit.
-- [ ] Compose with Fetcher and Parser through public interfaces, or keep those
-  integrations optional.
-- [ ] Add deterministic tests for scheduling and limits without relying on
-  public websites.
-- [ ] Update the README, manifest, examples, and skill to match the real API.
+- [ ] Implement the framework-independent crawler core, with explicit policy,
+  bounded traversal, injected retrieval/link-discovery collaborators, and
+  deterministic tests.
+- [ ] Add an optional Scrapy HTTP adapter after the core contract is stable;
+  enforce robots.txt, timeouts, retries, and throttling in the adapter.
+- [ ] Add optional, per-request Playwright rendering only after the Scrapy
+  path is tested and a JavaScript-rendering use case is established.
+- [ ] Keep Fetcher and HTML Parser independent; do not make them dependencies
+  of the crawler core.
+- [ ] Follow the detailed implementation tasks and acceptance criteria in
+  [modules/crawler/ROADMAP.md](modules/crawler/ROADMAP.md).
 
 ### 5. Add shared quality checks
 

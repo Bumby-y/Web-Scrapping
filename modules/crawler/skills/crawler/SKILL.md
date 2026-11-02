@@ -1,43 +1,51 @@
 ---
 name: crawler
-description: Guidance for selecting and using the web-scraping crawler module.
+description: Guidance for bounded traversal with the framework-independent web-scraping crawler core.
 ---
 
 # Crawler skill
 
 ## When to use
 
-Use the Crawler when a task needs bounded traversal across explicitly permitted
-pages, including frontier management, duplicate avoidance, and stopping at
-caller-defined limits.
+Use the Crawler when a task needs deterministic, bounded traversal of explicitly
+permitted HTTP(S) URLs. The core takes seeds, a `CrawlPolicy`, a retriever, and
+a link discoverer, then returns traversal metadata.
 
-Use the Fetcher or another retrieval adapter for HTTP requests. Use the HTML
-Parser or another link-discovery collaborator to extract candidate links. Keep
-workflow orchestration and durable page-content storage in the calling
-application unless a documented crawler API explicitly provides those
-capabilities.
+## Current API
 
-## Current status
+The package exports `CrawlPolicy`, `Crawler`, `CrawlResult`, `CrawlFailure`,
+`RetrievalResult`, `Retriever`, `LinkDiscoverer`, and `LinkEdge`. See the
+module README for the complete public contract and example.
 
-This module is a scaffold. Do not assume it exposes a working crawler API.
-Check the package README and implementation for the current supported interface
-before proposing or executing code that depends on it.
+The core has no runtime dependencies and does not make network requests or
+retain response bodies. Callers inject the retrieval and link-discovery
+collaborators. Keep those integrations at the composition boundary; do not
+couple the crawler core to private APIs of Fetcher or HTML Parser.
 
-## Scope and boundaries
+## Scope, identity, and limits
 
-The Crawler coordinates what to visit and when to stop. It does not own HTTP
-transport, HTML parsing, application orchestration, cloud deployment, or a
-specific storage provider. Do not couple the crawler to private APIs of other
-modules.
+- Require explicit allowed domains and finite page, depth, and elapsed-time
+  limits.
+- Match allowed host names exactly; subdomains require explicit authorization.
+- Only HTTP(S) URLs are accepted. Relative links resolve against the final
+  page URL. Scheme/host are lowercased, default ports and fragments are
+  removed, and query strings and paths are preserved.
+- An out-of-scope seed is an error. Invalid or out-of-scope discovered links
+  are skipped. Out-of-scope redirects are returned as structured failures.
+- Collaborators must enforce their own request timeouts; the core cannot
+  interrupt a blocking collaborator. The crawler does not retry failures.
 
-## Safety and limits
+## Network and access safety
 
-Require an explicit authorized crawl scope and finite limits. Respect site
-terms, robots directives, rate limits, and access controls. Validate
-discovered URLs against scope, do not silently broaden to unrelated hosts, and
-do not bypass restrictions. Keep network activity and retries bounded and
-explicit.
+The core itself performs no network access and does not fetch or enforce
+robots.txt. Any future network adapter must respect robots directives, site
+terms, rate limits, and access controls; it must not attempt to bypass them.
+Keep retries and throttling bounded and explicit. Use controlled local fixtures
+for tests rather than public websites.
 
-For design decisions, follow the Crawler README and
-`docs/ARCHITECTURE.md`. Treat local/cloud storage adapters as future
-integrations, not existing functionality.
+## Future integrations
+
+Scrapy HTTP retrieval and Playwright rendering are not implemented. Keep
+Playwright optional and per-request if introduced; ordinary HTTP should remain
+the default. Check the module README and roadmap before relying on future
+adapter behavior.

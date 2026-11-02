@@ -1,4 +1,6 @@
 # `web_scraping_crawler`
 
-This Python package is the importable implementation of the Crawler module.
-Put public APIs and their supporting implementation here.
+The package exports the framework-independent `CrawlPolicy`, `Crawler`,
+`CrawlResult`, collaborator protocols, and structured failure/result types.
+See the [Crawler module README](../../README.md) for the public contract and
+usage example.

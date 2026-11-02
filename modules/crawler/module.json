@@ -2,15 +2,15 @@
   "manifest_version": 1,
   "name": "web-scraping-crawler",
   "version": "0.1.0",
-  "description": "Reusable crawl coordination for web-scraping workflows.",
+  "description": "Framework-independent bounded crawl coordination.",
   "language": "Python",
-  "status": "scaffold",
+  "status": "core-implemented",
   "package": "web_scraping_crawler",
   "use_cases": [
-    "Coordinate traversal of permitted pages while tracking visited URLs."
+    "Coordinate bounded traversal of explicitly permitted URLs through injected collaborators."
   ],
   "permissions": {
-    "network": true
+    "network": false
   },
   "dependencies": []
 }
