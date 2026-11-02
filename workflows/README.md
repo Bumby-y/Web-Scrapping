@@ -9,3 +9,8 @@ belongs in the corresponding Python package. Document the expected orchestrator,
 input/output contract, required module versions, and permissions for each
 workflow. Because no orchestrator has been selected yet, add provider-specific
 workflow formats only when that choice is made.
+
+## Available workflows
+
+- [Crawler CLI](crawler/README.md): run the optional Scrapy crawler against one
+  or more configurable seed URLs from a terminal.
