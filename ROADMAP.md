@@ -69,10 +69,10 @@ composed repeatedly across local and cloud solutions.
 
 - [x] Document the crawler's goals, ownership boundaries, non-goals, and
   intended initial implementation scope.
-- [ ] Implement the framework-independent crawler core, with explicit policy,
+- [x] Implement the framework-independent crawler core, with explicit policy,
   bounded traversal, injected retrieval/link-discovery collaborators, and
   deterministic tests.
-- [ ] Add an optional Scrapy HTTP adapter after the core contract is stable;
+- [x] Add an optional Scrapy HTTP adapter after the core contract is stable;
   enforce robots.txt, timeouts, retries, and throttling in the adapter.
 - [ ] Add optional, per-request Playwright rendering only after the Scrapy
   path is tested and a JavaScript-rendering use case is established.

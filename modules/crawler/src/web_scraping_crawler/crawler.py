@@ -241,8 +241,7 @@ class Crawler(Generic[PageT]):
         return time.monotonic() - started >= self.policy.max_elapsed_time
 
     def _is_in_scope(self, url: str) -> bool:
-        host = urlsplit(url).hostname
-        return host is not None and _normalize_host(host) in self.policy.allowed_domains
+        return _is_url_in_scope(url, self.policy.allowed_domains)
 
 
 def _failure(url: str, stage: FailureStage, exc: Exception) -> CrawlFailure:
@@ -326,3 +325,11 @@ def _normalize_url(url: str, base_url: Optional[str] = None) -> str:
         host += ":" + str(port)
 
     return urlunsplit((scheme, host, parsed.path, parsed.query, ""))
+
+
+def _is_url_in_scope(url: str, allowed_domains: Tuple[str, ...]) -> bool:
+    try:
+        host = urlsplit(url).hostname
+        return host is not None and _normalize_host(host) in allowed_domains
+    except ValueError:
+        return False

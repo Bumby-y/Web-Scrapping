@@ -82,17 +82,21 @@ with a second frontier.
 
 ## Phase 2: Optional Scrapy HTTP adapter
 
-- [ ] Add Scrapy as an optional dependency so core users do not need to
+The adapter is a Scrapy-native spider with a Python helper entry point. It
+shares the core policy and URL identity rules while leaving request scheduling
+and duplicate filtering to Scrapy.
+
+- [x] Add Scrapy as an optional dependency so core users do not need to
   install it.
-- [ ] Compose the adapter with the core's traversal contract; use Scrapy's
+- [x] Compose the adapter with the core's traversal contract; use Scrapy's
   scheduler rather than adding a competing queue/deduplication scheduler.
-- [ ] Enforce robots.txt compliance, request timeouts, bounded retries, and
+- [x] Enforce robots.txt compliance, request timeouts, bounded retries, and
   throttling in the adapter.
-- [ ] Keep redirect destinations subject to the same explicit scope policy.
-- [ ] Preserve structured URL failures and expose adapter errors explicitly.
-- [ ] Test robots policy, redirects, failures, and bounded request behavior
+- [x] Keep redirect destinations subject to the same explicit scope policy.
+- [x] Preserve structured URL failures and expose adapter errors explicitly.
+- [x] Test robots policy, redirects, failures, and bounded request behavior
   with controlled fixtures or local servers.
-- [ ] Document optional installation, configuration, permissions, and
+- [x] Document optional installation, configuration, permissions, and
   behavior; update package metadata, manifest, skill, and examples.
 
 ## Phase 3: Optional Playwright rendering

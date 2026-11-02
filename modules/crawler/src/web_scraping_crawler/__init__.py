@@ -10,6 +10,7 @@ from .crawler import (
     RetrievalResult,
     Retriever,
 )
+from .scrapy_adapter import crawl_with_scrapy
 
 __all__ = [
     "CrawlFailure",
@@ -20,4 +21,5 @@ __all__ = [
     "LinkEdge",
     "RetrievalResult",
     "Retriever",
+    "crawl_with_scrapy",
 ]

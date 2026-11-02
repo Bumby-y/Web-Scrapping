@@ -7,10 +7,22 @@ page content.
 
 ## Installation
 
-Install the package from this directory. The core has no runtime dependencies:
+Install the framework-independent core from this directory:
 
 ```shell
 python -m pip install .
+```
+
+For the optional Scrapy adapter, install its extra:
+
+```shell
+python -m pip install ".[scrapy]"
+```
+
+For development and adapter tests, install both extras:
+
+```shell
+python -m pip install -e ".[dev,scrapy]"
 ```
 
 ## Public API
@@ -93,14 +105,68 @@ The core traverses URLs in FIFO order and enforces page, depth, and elapsed
 time bounds. Retrieval and link-discovery exceptions are returned as
 per-URL failures; the crawler does not retry them.
 
+## Optional Scrapy HTTP adapter
+
+The optional adapter uses Scrapy's scheduler and duplicate filter; it does not
+run the core's separate in-memory frontier. It shares the core's scope and URL
+identity rules and accepts the same `CrawlPolicy`. The link discoverer receives
+the downloaded response body as a string.
+
+```python
+from parsel import Selector
+from web_scraping_crawler import CrawlPolicy, crawl_with_scrapy
+
+
+class HtmlLinkDiscoverer:
+    def discover_links(self, html: str) -> list[str]:
+        return Selector(text=html).css("a::attr(href)").getall()
+
+
+result = crawl_with_scrapy(
+    seeds=("https://example.com/",),
+    policy=CrawlPolicy(
+        allowed_domains=("example.com",),
+        max_pages=100,
+        max_depth=3,
+        max_elapsed_time=60,
+    ),
+    link_discoverer=HtmlLinkDiscoverer(),
+)
+```
+
+This helper is for a normal synchronous script: it starts and stops Scrapy's
+Twisted reactor, so call it at most once per Python process and do not call it
+from an already-running event loop. Applications that already own a reactor
+need a runner-based integration, which is not included in this adapter.
+
+Adapter defaults are deliberately bounded:
+
+- Robots.txt compliance is enabled and is not disabled by this helper.
+- Each download times out after 15 seconds; Scrapy retries eligible failures
+  at most twice.
+- Total concurrency is 4 requests, with at most 2 per domain.
+- AutoThrottle is enabled with a 1-second starting delay, 10-second maximum
+  delay, and target concurrency of 1.
+- The policy's page limit caps unique scheduled pages (redirects and retries
+  do not consume additional page slots); its depth limit prevents deeper links
+  from being scheduled, and its elapsed-time limit closes the spider.
+- Every request is checked against the exact allowed-domain scope before
+  download. Out-of-scope redirect destinations are blocked and returned as
+  structured redirect failures.
+
+The adapter uses the same URL identity rules as the core: fragments and
+default ports do not distinguish requests, while query strings and paths are
+preserved. Adapter result order follows Scrapy's concurrent response/error
+completion and is not guaranteed to be deterministic.
+
 ## Boundaries and future integrations
 
-The core does not implement HTTP transport, HTML parsing, robots.txt retrieval,
-retries, throttling, persistence, distributed workers, or browser rendering.
-Use authorized retrieval, respect site terms and access controls, and apply
-robots and rate-limit requirements in the network adapter. Scrapy and
-Playwright integrations are future, optional phases; neither is a dependency
-of the core.
+The framework-independent core does not implement HTTP transport, HTML
+parsing, robots.txt retrieval, retries, throttling, persistence, distributed
+workers, or browser rendering. The Scrapy extra supplies optional HTTP
+retrieval with robots compliance, bounded retries, timeouts, and throttling.
+Respect site terms and access controls. Playwright rendering remains a future
+optional phase and is not a dependency of the core or Scrapy adapter.
 
 See [ROADMAP.md](ROADMAP.md) for implementation phases and acceptance tests.
 The [crawler skill](skills/crawler/SKILL.md) contains guidance for AI-agent

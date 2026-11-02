@@ -2,15 +2,21 @@
   "manifest_version": 1,
   "name": "web-scraping-crawler",
   "version": "0.1.0",
-  "description": "Framework-independent bounded crawl coordination.",
+  "description": "Framework-independent crawl coordination with an optional Scrapy HTTP adapter.",
   "language": "Python",
-  "status": "core-implemented",
+  "status": "core-and-scrapy-adapter",
   "package": "web_scraping_crawler",
   "use_cases": [
-    "Coordinate bounded traversal of explicitly permitted URLs through injected collaborators."
+    "Coordinate bounded traversal of explicitly permitted URLs through injected collaborators.",
+    "Optionally retrieve pages with Scrapy while enforcing crawl scope and network limits."
   ],
   "permissions": {
-    "network": false
+    "network": true
+  },
+  "optional_dependencies": {
+    "scrapy": [
+      "Scrapy>=2.11,<3"
+    ]
   },
   "dependencies": []
 }

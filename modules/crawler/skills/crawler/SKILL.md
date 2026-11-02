@@ -22,6 +22,12 @@ retain response bodies. Callers inject the retrieval and link-discovery
 collaborators. Keep those integrations at the composition boundary; do not
 couple the crawler core to private APIs of Fetcher or HTML Parser.
 
+For optional HTTP crawling, install `web-scraping-crawler[scrapy]` and call
+`crawl_with_scrapy(seeds, policy, link_discoverer)`. The helper uses Scrapy's
+scheduler and returns the same `CrawlResult` shape; it accepts HTML text in
+the link-discovery collaborator. It starts the Twisted reactor and can only be
+called once in a normal synchronous Python process.
+
 ## Scope, identity, and limits
 
 - Require explicit allowed domains and finite page, depth, and elapsed-time
@@ -43,9 +49,15 @@ terms, rate limits, and access controls; it must not attempt to bypass them.
 Keep retries and throttling bounded and explicit. Use controlled local fixtures
 for tests rather than public websites.
 
+## Scrapy adapter
+
+The optional adapter enables robots.txt compliance, 15-second request
+timeouts, two retries, bounded concurrency, and AutoThrottle. It enforces
+exact host scope on requests and redirect destinations. Do not describe the
+core itself as performing network access.
+
 ## Future integrations
 
-Scrapy HTTP retrieval and Playwright rendering are not implemented. Keep
-Playwright optional and per-request if introduced; ordinary HTTP should remain
-the default. Check the module README and roadmap before relying on future
-adapter behavior.
+Playwright rendering is not implemented. Keep it optional and per-request if
+introduced; ordinary HTTP should remain the default. Check the module README
+and roadmap before relying on future adapter behavior.
