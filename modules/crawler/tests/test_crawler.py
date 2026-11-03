@@ -176,6 +176,65 @@ def test_skips_disallowed_subdomains_and_non_http_links():
     assert result.link_edges == ()
 
 
+def test_url_prefix_restricts_discovery_and_scheduling():
+    root = "https://example.com/hkrw/en/index.html"
+    child = "https://example.com/hkrw/en/detail.html"
+    retriever = FakeRetriever(
+        {root: RetrievalResult("root"), child: RetrievalResult("child")}
+    )
+    discoverer = FakeLinkDiscoverer(
+        {
+            "root": [
+                "detail.html",
+                "/hkrw/enough/outside.html",
+                "/hkrw/zh/index.html",
+                "http://example.com/hkrw/en/http.html",
+            ],
+            "child": [],
+        }
+    )
+    policy = make_policy(
+        allowed_url_prefixes=("HTTPS://EXAMPLE.COM:443/hkrw/en/",)
+    )
+
+    result = Crawler(policy).crawl([root], retriever, discoverer)
+
+    assert policy.allowed_url_prefixes == ("https://example.com/hkrw/en/",)
+    assert result.visited_urls == (root, child)
+    assert result.discovered_urls == (child,)
+    assert result.link_edges == ((root, child),)
+
+
+def test_url_prefix_rejects_seed_outside_prefix():
+    crawler = Crawler(
+        make_policy(allowed_url_prefixes=("https://example.com/hkrw/en/",))
+    )
+
+    with pytest.raises(ValueError, match="outside"):
+        crawler.crawl(
+            ["https://example.com/en/index.html"],
+            FakeRetriever({}),
+            FakeLinkDiscoverer({}),
+        )
+
+
+def test_url_prefix_rejects_redirect_outside_prefix():
+    root = "https://example.com/hkrw/en/start.html"
+    retriever = FakeRetriever(
+        {root: RetrievalResult("root", "https://example.com/en/final.html")}
+    )
+    discoverer = FakeLinkDiscoverer({})
+
+    result = Crawler(
+        make_policy(allowed_url_prefixes=("https://example.com/hkrw/en/",))
+    ).crawl([root], retriever, discoverer)
+
+    assert result.successful_urls == ()
+    assert result.failed_urls[0].stage == "redirect"
+    assert result.failed_urls[0].redirect_url == "https://example.com/en/final.html"
+    assert discoverer.visited == []
+
+
 def test_rejects_out_of_scope_redirect_and_records_structured_failure():
     root = "http://example.com/"
     retriever = FakeRetriever(
@@ -301,6 +360,10 @@ def test_checks_elapsed_time_before_starting_more_work(monkeypatch):
         {"allowed_domains": ()},
         {"allowed_domains": ("https://example.com",)},
         {"allowed_domains": ("example.com:443",)},
+        {"allowed_url_prefixes": ("https://other.example/path/",)},
+        {"allowed_url_prefixes": ("https://example.com/path",)},
+        {"allowed_url_prefixes": ("https://example.com/path/?q=1",)},
+        {"allowed_url_prefixes": ("https://example.com/path/#section",)},
         {"max_pages": 0},
         {"max_depth": -1},
         {"max_elapsed_time": float("inf")},

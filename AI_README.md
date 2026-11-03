@@ -13,13 +13,16 @@ instructions aligned and versioned together.
 
 ## Current state
 
-- The repository is a Python monorepo with three independent module scaffolds:
+- The repository is a Python monorepo with three independent modules:
   `fetcher`, `crawler`, and `html-parser`.
-- Their package metadata and discovery manifests exist, but the runtime APIs
-  have not been implemented.
-- Current tests are package-import smoke tests, not feature tests.
-- Module-local AI skills are scaffolds; they must not claim unsupported
-  functionality.
+- The Crawler has a framework-independent core, optional Scrapy HTTP adapter,
+  optional Playwright rendering, and a standalone workflow CLI. The Fetcher
+  and HTML Parser remain scaffolds.
+- Crawler tests cover core behavior, a local HTTP server, and an optional
+  JavaScript-rendered fixture; check each module's tests before relying on
+  behavior.
+- The Crawler skill documents implemented functionality. Other module-local
+  skills may still be scaffolds and must not claim unsupported functionality.
 - No orchestrator, workflow format, module registry, or publishing process has
   been selected yet. Do not introduce provider-specific conventions without a
   concrete requirement.

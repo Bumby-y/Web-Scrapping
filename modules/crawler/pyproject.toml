@@ -13,6 +13,7 @@ dependencies = []
 [project.optional-dependencies]
 dev = ["pytest>=7"]
 scrapy = ["Scrapy>=2.11,<3"]
+playwright = ["scrapy-playwright>=0.0.44,<1; python_version >= '3.10'"]
 
 [tool.setuptools.packages.find]
 where = ["src"]

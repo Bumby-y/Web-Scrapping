@@ -12,5 +12,5 @@ workflow formats only when that choice is made.
 
 ## Available workflows
 
-- [Crawler CLI](crawler/README.md): run the optional Scrapy crawler against one
-  or more configurable seed URLs from a terminal.
+- [Crawler CLI](crawler/README.md): run the bounded Scrapy crawler with
+  optional Playwright rendering against configurable seed URLs.

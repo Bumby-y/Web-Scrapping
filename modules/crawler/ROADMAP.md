@@ -101,13 +101,13 @@ and duplicate filtering to Scrapy.
 
 ## Phase 3: Optional Playwright rendering
 
-- [ ] Add Playwright only as an optional integration dependency.
-- [ ] Keep ordinary HTTP as the default; make browser rendering opt-in for
-  selected requests rather than rendering every page.
-- [ ] Document browser installation, resource limits, and configuration.
-- [ ] Test against a controlled local JavaScript fixture and verify ordinary
+- [x] Add Playwright only as an optional integration dependency.
+- [x] Keep ordinary HTTP as the default; make browser rendering opt-in for
+  crawl page requests rather than enabling it for every crawl.
+- [x] Document browser installation, resource limits, and configuration.
+- [x] Test against a controlled local JavaScript fixture and verify ordinary
   Scrapy requests remain unaffected.
-- [ ] Update the module README, manifest, skill, and examples to match the
+- [x] Update the module README, manifest, skill, and examples to match the
   supported behavior.
 
 ## Core traversal flow

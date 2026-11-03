@@ -2,13 +2,14 @@
   "manifest_version": 1,
   "name": "web-scraping-crawler",
   "version": "0.1.0",
-  "description": "Framework-independent crawl coordination with an optional Scrapy HTTP adapter.",
+  "description": "Bounded crawl coordination with optional Scrapy HTTP and Playwright rendering adapters.",
   "language": "Python",
-  "status": "core-and-scrapy-adapter",
+  "status": "core-scrapy-and-playwright-adapters",
   "package": "web_scraping_crawler",
   "use_cases": [
     "Coordinate bounded traversal of explicitly permitted URLs through injected collaborators.",
-    "Optionally retrieve pages with Scrapy while enforcing crawl scope and network limits."
+    "Optionally retrieve pages with Scrapy while enforcing crawl scope and network limits.",
+    "Optionally render JavaScript pages with Playwright through Scrapy."
   ],
   "permissions": {
     "network": true
@@ -16,6 +17,9 @@
   "optional_dependencies": {
     "scrapy": [
       "Scrapy>=2.11,<3"
+    ],
+    "playwright": [
+      "scrapy-playwright>=0.0.44,<1; python_version >= '3.10'"
     ]
   },
   "dependencies": []

@@ -144,3 +144,57 @@ def test_scrapy_adapter_honors_scope_robots_retries_and_page_limits():
         and failure.redirect_url.startswith("http://localhost:")
         for failure in result.failed_urls
     )
+
+
+@pytest.mark.parametrize(
+    ("render_javascript", "render_wait_for"),
+    [
+        ("yes", None),
+        (False, ""),
+        (False, "#app"),
+    ],
+)
+def test_scrapy_adapter_rejects_invalid_render_options(
+    render_javascript, render_wait_for
+):
+    with pytest.raises(ValueError):
+        crawl_with_scrapy(
+            [],
+            CrawlPolicy(
+                allowed_domains=("example.com",),
+                max_pages=1,
+                max_depth=0,
+                max_elapsed_time=1,
+            ),
+            HtmlLinkDiscoverer(),
+            render_javascript=render_javascript,
+            render_wait_for=render_wait_for,
+        )
+
+
+@pytest.mark.parametrize(
+    ("render_javascript", "load_more_selectors", "max_load_more_clicks"),
+    [
+        (False, (".section-more-btn",), 20),
+        (True, ".section-more-btn", 20),
+        (True, (".section-more-btn",), 0),
+        (True, (".section-more-btn",), True),
+    ],
+)
+def test_scrapy_adapter_rejects_invalid_load_more_options(
+    render_javascript, load_more_selectors, max_load_more_clicks
+):
+    with pytest.raises(ValueError):
+        crawl_with_scrapy(
+            [],
+            CrawlPolicy(
+                allowed_domains=("example.com",),
+                max_pages=1,
+                max_depth=0,
+                max_elapsed_time=1,
+            ),
+            HtmlLinkDiscoverer(),
+            render_javascript=render_javascript,
+            load_more_selectors=load_more_selectors,
+            max_load_more_clicks=max_load_more_clicks,
+        )

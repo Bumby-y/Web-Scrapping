@@ -21,8 +21,8 @@ composed repeatedly across local and cloud solutions.
   purpose documentation.
 - [x] Add module-local AI skill scaffolds.
 - [x] Document the distinction between runtime workflows and GitHub Actions.
-- [ ] Implement production-ready runtime APIs; all three modules are currently
-  scaffolds.
+- [ ] Implement production-ready runtime APIs for the Fetcher and HTML Parser,
+  which remain scaffolds.
 - [ ] Choose an orchestrator, skill discovery convention, and distribution
   channel.
 - [ ] Define and validate small adapter contracts before claiming storage or
@@ -74,8 +74,8 @@ composed repeatedly across local and cloud solutions.
   deterministic tests.
 - [x] Add an optional Scrapy HTTP adapter after the core contract is stable;
   enforce robots.txt, timeouts, retries, and throttling in the adapter.
-- [ ] Add optional, per-request Playwright rendering only after the Scrapy
-  path is tested and a JavaScript-rendering use case is established.
+- [x] Add optional Playwright rendering after testing the Scrapy path against a
+  controlled JavaScript-rendered fixture.
 - [ ] Keep Fetcher and HTML Parser independent; do not make them dependencies
   of the crawler core.
 - [ ] Follow the detailed implementation tasks and acceptance criteria in

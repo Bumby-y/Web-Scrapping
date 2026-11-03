@@ -1,12 +1,241 @@
 {
   "visited_urls": [
-    "https://train.slsnp.hkpl.gov.hk/hkrw/en/index.html"
+    "https://train.slsnp.hkpl.gov.hk/hkrw/en/index.html",
+    "https://train.slsnp.hkpl.gov.hk/hkrw/en/social-harmony.html",
+    "https://train.slsnp.hkpl.gov.hk/hkrw/en/interpersonal-relationship.html",
+    "https://train.slsnp.hkpl.gov.hk/hkrw/en/positive-thinking.html",
+    "https://train.slsnp.hkpl.gov.hk/hkrw/en/talks-and-exhibitions/91460.html",
+    "https://train.slsnp.hkpl.gov.hk/hkrw/en/workshop_other_active.html",
+    "https://train.slsnp.hkpl.gov.hk/hkrw/en/event.html?eventId=2072875898077114370&title=Timeless%20Craftsmanship:%20Aesthetics%20Mosaic%20Coaster%20Workshop",
+    "https://train.slsnp.hkpl.gov.hk/hkrw/en/youth-adult-workshops.html"
   ],
   "successful_urls": [
-    "https://train.slsnp.hkpl.gov.hk/hkrw/en/index.html"
+    "https://train.slsnp.hkpl.gov.hk/hkrw/en/index.html",
+    "https://train.slsnp.hkpl.gov.hk/hkrw/en/social-harmony.html",
+    "https://train.slsnp.hkpl.gov.hk/hkrw/en/interpersonal-relationship.html",
+    "https://train.slsnp.hkpl.gov.hk/hkrw/en/positive-thinking.html",
+    "https://train.slsnp.hkpl.gov.hk/hkrw/en/talks-and-exhibitions/91460.html",
+    "https://train.slsnp.hkpl.gov.hk/hkrw/en/workshop_other_active.html",
+    "https://train.slsnp.hkpl.gov.hk/hkrw/en/event.html?eventId=2072875898077114370&title=Timeless%20Craftsmanship:%20Aesthetics%20Mosaic%20Coaster%20Workshop",
+    "https://train.slsnp.hkpl.gov.hk/hkrw/en/youth-adult-workshops.html"
   ],
   "failed_urls": [],
-  "discovered_urls": [],
-  "link_edges": [],
-  "edge_count": 0
+  "discovered_urls": [
+    "https://train.slsnp.hkpl.gov.hk/hkrw/en/highlight-activities/91450.html",
+    "https://train.slsnp.hkpl.gov.hk/hkrw/en/highlight-activities/91473.html",
+    "https://train.slsnp.hkpl.gov.hk/hkrw/en/highlight-activities/91477.html",
+    "https://train.slsnp.hkpl.gov.hk/hkrw/en/highlight-activities/91478.html",
+    "https://train.slsnp.hkpl.gov.hk/hkrw/en/highlight-activities/91479.html",
+    "https://train.slsnp.hkpl.gov.hk/hkrw/en/highlight-activities/91481.html",
+    "https://train.slsnp.hkpl.gov.hk/hkrw/en/highlight-activities/91482.html",
+    "https://train.slsnp.hkpl.gov.hk/hkrw/en/highlight-activities/91483.html",
+    "https://train.slsnp.hkpl.gov.hk/hkrw/en/highlight-activities/91484.html",
+    "https://train.slsnp.hkpl.gov.hk/hkrw/en/highlight-activities/91485.html",
+    "https://train.slsnp.hkpl.gov.hk/hkrw/en/highlight-activities/91486.html",
+    "https://train.slsnp.hkpl.gov.hk/hkrw/en/time-honoured-craftsmanship.html",
+    "https://train.slsnp.hkpl.gov.hk/hkrw/en/book-display.html",
+    "https://train.slsnp.hkpl.gov.hk/hkrw/en/other_activitie.html",
+    "https://train.slsnp.hkpl.gov.hk/hkrw/en/storytelling-workshops.html",
+    "https://train.slsnp.hkpl.gov.hk/hkrw/en/parent_child_workshops.html",
+    "https://train.slsnp.hkpl.gov.hk/hkrw/en/youth-adult-workshops.html",
+    "https://train.slsnp.hkpl.gov.hk/hkrw/en/event.html?eventId=2072875898077114370&title=Timeless%20Craftsmanship:%20Aesthetics%20Mosaic%20Coaster%20Workshop",
+    "https://train.slsnp.hkpl.gov.hk/hkrw/en/workshop_other_active.html",
+    "https://train.slsnp.hkpl.gov.hk/hkrw/en/talks-and-exhibitions/91460.html",
+    "https://train.slsnp.hkpl.gov.hk/hkrw/en/positive-thinking.html",
+    "https://train.slsnp.hkpl.gov.hk/hkrw/en/interpersonal-relationship.html",
+    "https://train.slsnp.hkpl.gov.hk/hkrw/en/social-harmony.html"
+  ],
+  "out_of_scope_urls": [
+    "https://www.hkpl.gov.hk/en/extension-activities/event-category/271459/4-23-world-book-day-creative-competition",
+    "https://www.hkreadingplus.com/3rd/events-workshop",
+    "https://www.hkcea.org.hk/%E5%90%88%E8%BE%A6%E6%B4%BB%E5%8B%95/2025-2026-%E5%85%A8%E6%B8%AF%E4%B8%AD%E5%B0%8F%E5%AD%B8%E6%A0%A1%E9%9A%9B%E4%B8%AD%E6%96%87%E9%96%B1%E8%AE%80%E7%AB%B6%E8%B3%BD",
+    "https://www.hkpl.gov.hk/en/extension-activities/search?q=%E7%AB%A5%E8%A9%B1%E5%9B%9B%E6%9C%88&search-button=",
+    "https://www.hkpl.gov.hk/en/extension-activities/event-category/291437/pop-up-library-hkrw-2026",
+    "https://hkrw.readingpromotion.gov.hk/event/udkcivoc6ijzanb8ayx449bj",
+    "https://hkrw.readingpromotion.gov.hk/event/ysdmwi4cuc2gbes64ot0h3fb",
+    "https://hkrw.readingpromotion.gov.hk/event/eyv1q3l1sr1xehvd1nzonrvz",
+    "https://hkrw.readingpromotion.gov.hk/event/wml7vs1usz7ao1m6rd1hlyk1",
+    "https://hkrw.readingpromotion.gov.hk/event/wxmgb7wxdq80uofa6klubnrp",
+    "https://hkrw2025.readingpromotion.gov.hk/",
+    "https://hkrw2024.readingpromotion.gov.hk/"
+  ],
+  "link_edges": [
+    [
+      "https://train.slsnp.hkpl.gov.hk/hkrw/en/index.html",
+      "https://train.slsnp.hkpl.gov.hk/hkrw/en/highlight-activities/91450.html"
+    ],
+    [
+      "https://train.slsnp.hkpl.gov.hk/hkrw/en/index.html",
+      "https://train.slsnp.hkpl.gov.hk/hkrw/en/highlight-activities/91473.html"
+    ],
+    [
+      "https://train.slsnp.hkpl.gov.hk/hkrw/en/index.html",
+      "https://train.slsnp.hkpl.gov.hk/hkrw/en/highlight-activities/91477.html"
+    ],
+    [
+      "https://train.slsnp.hkpl.gov.hk/hkrw/en/index.html",
+      "https://train.slsnp.hkpl.gov.hk/hkrw/en/highlight-activities/91478.html"
+    ],
+    [
+      "https://train.slsnp.hkpl.gov.hk/hkrw/en/index.html",
+      "https://train.slsnp.hkpl.gov.hk/hkrw/en/highlight-activities/91479.html"
+    ],
+    [
+      "https://train.slsnp.hkpl.gov.hk/hkrw/en/index.html",
+      "https://train.slsnp.hkpl.gov.hk/hkrw/en/highlight-activities/91481.html"
+    ],
+    [
+      "https://train.slsnp.hkpl.gov.hk/hkrw/en/index.html",
+      "https://train.slsnp.hkpl.gov.hk/hkrw/en/highlight-activities/91482.html"
+    ],
+    [
+      "https://train.slsnp.hkpl.gov.hk/hkrw/en/index.html",
+      "https://train.slsnp.hkpl.gov.hk/hkrw/en/highlight-activities/91483.html"
+    ],
+    [
+      "https://train.slsnp.hkpl.gov.hk/hkrw/en/index.html",
+      "https://train.slsnp.hkpl.gov.hk/hkrw/en/highlight-activities/91484.html"
+    ],
+    [
+      "https://train.slsnp.hkpl.gov.hk/hkrw/en/index.html",
+      "https://train.slsnp.hkpl.gov.hk/hkrw/en/highlight-activities/91485.html"
+    ],
+    [
+      "https://train.slsnp.hkpl.gov.hk/hkrw/en/index.html",
+      "https://train.slsnp.hkpl.gov.hk/hkrw/en/highlight-activities/91486.html"
+    ],
+    [
+      "https://train.slsnp.hkpl.gov.hk/hkrw/en/index.html",
+      "https://train.slsnp.hkpl.gov.hk/hkrw/en/time-honoured-craftsmanship.html"
+    ],
+    [
+      "https://train.slsnp.hkpl.gov.hk/hkrw/en/index.html",
+      "https://train.slsnp.hkpl.gov.hk/hkrw/en/book-display.html"
+    ],
+    [
+      "https://train.slsnp.hkpl.gov.hk/hkrw/en/index.html",
+      "https://train.slsnp.hkpl.gov.hk/hkrw/en/other_activitie.html"
+    ],
+    [
+      "https://train.slsnp.hkpl.gov.hk/hkrw/en/index.html",
+      "https://train.slsnp.hkpl.gov.hk/hkrw/en/storytelling-workshops.html"
+    ],
+    [
+      "https://train.slsnp.hkpl.gov.hk/hkrw/en/index.html",
+      "https://train.slsnp.hkpl.gov.hk/hkrw/en/parent_child_workshops.html"
+    ],
+    [
+      "https://train.slsnp.hkpl.gov.hk/hkrw/en/index.html",
+      "https://train.slsnp.hkpl.gov.hk/hkrw/en/youth-adult-workshops.html"
+    ],
+    [
+      "https://train.slsnp.hkpl.gov.hk/hkrw/en/index.html",
+      "https://train.slsnp.hkpl.gov.hk/hkrw/en/event.html?eventId=2072875898077114370&title=Timeless%20Craftsmanship:%20Aesthetics%20Mosaic%20Coaster%20Workshop"
+    ],
+    [
+      "https://train.slsnp.hkpl.gov.hk/hkrw/en/index.html",
+      "https://train.slsnp.hkpl.gov.hk/hkrw/en/workshop_other_active.html"
+    ],
+    [
+      "https://train.slsnp.hkpl.gov.hk/hkrw/en/index.html",
+      "https://train.slsnp.hkpl.gov.hk/hkrw/en/talks-and-exhibitions/91460.html"
+    ],
+    [
+      "https://train.slsnp.hkpl.gov.hk/hkrw/en/index.html",
+      "https://train.slsnp.hkpl.gov.hk/hkrw/en/positive-thinking.html"
+    ],
+    [
+      "https://train.slsnp.hkpl.gov.hk/hkrw/en/index.html",
+      "https://train.slsnp.hkpl.gov.hk/hkrw/en/interpersonal-relationship.html"
+    ],
+    [
+      "https://train.slsnp.hkpl.gov.hk/hkrw/en/index.html",
+      "https://train.slsnp.hkpl.gov.hk/hkrw/en/social-harmony.html"
+    ]
+  ],
+  "edge_count": 23,
+  "click_selector_counts": [
+    {
+      "page_url": "https://train.slsnp.hkpl.gov.hk/hkrw/en/index.html",
+      "selector": ".child-card",
+      "count": 40
+    },
+    {
+      "page_url": "https://train.slsnp.hkpl.gov.hk/hkrw/en/social-harmony.html",
+      "selector": ".child-card",
+      "count": 0
+    },
+    {
+      "page_url": "https://train.slsnp.hkpl.gov.hk/hkrw/en/interpersonal-relationship.html",
+      "selector": ".child-card",
+      "count": 0
+    },
+    {
+      "page_url": "https://train.slsnp.hkpl.gov.hk/hkrw/en/positive-thinking.html",
+      "selector": ".child-card",
+      "count": 0
+    },
+    {
+      "page_url": "https://train.slsnp.hkpl.gov.hk/hkrw/en/talks-and-exhibitions/91460.html",
+      "selector": ".child-card",
+      "count": 0
+    },
+    {
+      "page_url": "https://train.slsnp.hkpl.gov.hk/hkrw/en/workshop_other_active.html",
+      "selector": ".child-card",
+      "count": 0
+    },
+    {
+      "page_url": "https://train.slsnp.hkpl.gov.hk/hkrw/en/event.html?eventId=2072875898077114370&title=Timeless%20Craftsmanship:%20Aesthetics%20Mosaic%20Coaster%20Workshop",
+      "selector": ".child-card",
+      "count": 0
+    },
+    {
+      "page_url": "https://train.slsnp.hkpl.gov.hk/hkrw/en/youth-adult-workshops.html",
+      "selector": ".child-card",
+      "count": 0
+    }
+  ],
+  "load_more_click_counts": [
+    {
+      "page_url": "https://train.slsnp.hkpl.gov.hk/hkrw/en/index.html",
+      "selector": ".section-more-btn",
+      "count": 180
+    },
+    {
+      "page_url": "https://train.slsnp.hkpl.gov.hk/hkrw/en/social-harmony.html",
+      "selector": ".section-more-btn",
+      "count": 0
+    },
+    {
+      "page_url": "https://train.slsnp.hkpl.gov.hk/hkrw/en/interpersonal-relationship.html",
+      "selector": ".section-more-btn",
+      "count": 0
+    },
+    {
+      "page_url": "https://train.slsnp.hkpl.gov.hk/hkrw/en/positive-thinking.html",
+      "selector": ".section-more-btn",
+      "count": 0
+    },
+    {
+      "page_url": "https://train.slsnp.hkpl.gov.hk/hkrw/en/talks-and-exhibitions/91460.html",
+      "selector": ".section-more-btn",
+      "count": 0
+    },
+    {
+      "page_url": "https://train.slsnp.hkpl.gov.hk/hkrw/en/workshop_other_active.html",
+      "selector": ".section-more-btn",
+      "count": 0
+    },
+    {
+      "page_url": "https://train.slsnp.hkpl.gov.hk/hkrw/en/event.html?eventId=2072875898077114370&title=Timeless%20Craftsmanship:%20Aesthetics%20Mosaic%20Coaster%20Workshop",
+      "selector": ".section-more-btn",
+      "count": 0
+    },
+    {
+      "page_url": "https://train.slsnp.hkpl.gov.hk/hkrw/en/youth-adult-workshops.html",
+      "selector": ".section-more-btn",
+      "count": 0
+    }
+  ]
 }

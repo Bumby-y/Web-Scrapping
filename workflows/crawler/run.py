@@ -1,4 +1,4 @@
-"""Run a bounded crawl using the optional Scrapy adapter."""
+"""Run a bounded crawl using the optional Scrapy and Playwright adapters."""
 
 from __future__ import annotations
 
@@ -43,8 +43,9 @@ class HTMLAnchorLinkDiscoverer:
 def _arguments(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description=(
-            "Crawl authorized seeds with Scrapy. Robots.txt compliance and "
-            "bounded network settings are always enabled."
+            "Crawl authorized seeds with Scrapy. JavaScript rendering is "
+            "opt-in; robots.txt compliance and bounded network settings "
+            "are always enabled."
         )
     )
     parser.add_argument(
@@ -64,16 +65,66 @@ def _arguments(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
         ),
     )
     parser.add_argument(
-        "-p", "--max-pages", type=int, default=100, metavar="N",
-        help="Maximum scheduled pages (default: 10).",
+        "--allow-url-prefix",
+        action="append",
+        metavar="URL",
+        help=(
+            "Restrict the crawl to this slash-terminated URL prefix, for "
+            "example https://example.com/catalog/. Repeat to allow more."
+        ),
     )
     parser.add_argument(
-        "-d", "--max-depth", type=int, default=4, metavar="N",
-        help="Maximum link depth (default: 2).",
+        "-p", "--max-pages", type=int, default=100, metavar="N",
+        help="Maximum scheduled pages (default: 100).",
+    )
+    parser.add_argument(
+        "-d", "--max-depth", type=int, default=5, metavar="N",
+        help="Maximum link depth (default: 4).",
     )
     parser.add_argument(
         "-t", "--max-seconds", type=float, default=300, metavar="SECONDS",
-        help="Maximum crawl duration (default: 60).",
+        help="Maximum crawl duration (default: 300).",
+    )
+    parser.add_argument(
+        "--render-javascript",
+        action="store_true",
+        help=(
+            "Render each crawled page with Playwright Chromium before "
+            "discovering links."
+        ),
+    )
+    parser.add_argument(
+        "--render-wait-for",
+        metavar="CSS",
+        help=(
+            "Wait for this CSS selector on each rendered page before "
+            "discovering links; requires --render-javascript."
+        ),
+    )
+    parser.add_argument(
+        "--click-selector",
+        action="append",
+        metavar="CSS",
+        help=(
+            "Click matching elements to discover Vue navigation URLs. "
+            "Defaults to .child-card with Playwright; repeat to add selectors."
+        ),
+    )
+    parser.add_argument(
+        "--load-more-selector",
+        action="append",
+        metavar="CSS",
+        help=(
+            "Click matching load-more buttons before scanning/clicking cards; "
+            "repeat to add selectors."
+        ),
+    )
+    parser.add_argument(
+        "--max-load-more-clicks",
+        type=int,
+        default=20,
+        metavar="N",
+        help="Maximum load-more clicks per expansion pass (default: 20).",
     )
     parser.add_argument(
         "-o",
@@ -82,7 +133,19 @@ def _arguments(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
         default=Path("crawl-result.json"),
         help="Write the JSON result to this file (default: crawl-result.json).",
     )
-    return parser.parse_args(argv)
+    args = parser.parse_args(argv)
+    if args.render_wait_for is not None:
+        if not args.render_wait_for.strip():
+            parser.error("--render-wait-for must be a non-empty CSS selector")
+        if not args.render_javascript:
+            parser.error("--render-wait-for requires --render-javascript")
+    if args.click_selector is not None and not args.render_javascript:
+        parser.error("--click-selector requires --render-javascript")
+    if args.load_more_selector is not None and not args.render_javascript:
+        parser.error("--load-more-selector requires --render-javascript")
+    if args.max_load_more_clicks < 1:
+        parser.error("--max-load-more-clicks must be a positive integer")
+    return args
 
 
 def _result_dict(result: CrawlResult) -> dict:
@@ -100,8 +163,25 @@ def _result_dict(result: CrawlResult) -> dict:
             for failure in result.failed_urls
         ],
         "discovered_urls": list(result.discovered_urls),
+        "out_of_scope_urls": list(result.out_of_scope_urls),
         "link_edges": [list(edge) for edge in result.link_edges],
         "edge_count": result.edge_count,
+        "click_selector_counts": [
+            {
+                "page_url": page_url,
+                "selector": selector,
+                "count": count,
+            }
+            for page_url, selector, count in result.click_selector_counts
+        ],
+        "load_more_click_counts": [
+            {
+                "page_url": page_url,
+                "selector": selector,
+                "count": count,
+            }
+            for page_url, selector, count in result.load_more_click_counts
+        ],
     }
 
 
@@ -128,6 +208,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
             max_pages=args.max_pages,
             max_depth=args.max_depth,
             max_elapsed_time=args.max_seconds,
+            allowed_url_prefixes=tuple(args.allow_url_prefix or ()),
         )
     except (TypeError, ValueError) as exc:
         raise SystemExit("Invalid crawl policy: {}".format(exc)) from exc
@@ -136,6 +217,17 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         seeds=tuple(args.seed_urls),
         policy=policy,
         link_discoverer=HTMLAnchorLinkDiscoverer(),
+        render_javascript=args.render_javascript,
+        render_wait_for=args.render_wait_for,
+        click_selectors=(
+            tuple(args.click_selector) if args.click_selector is not None else None
+        ),
+        load_more_selectors=(
+            tuple(args.load_more_selector)
+            if args.load_more_selector is not None
+            else None
+        ),
+        max_load_more_clicks=args.max_load_more_clicks,
     )
     serialized = json.dumps(_result_dict(result), indent=2)
     args.output.write_text(serialized + "\n", encoding="utf-8")
@@ -149,7 +241,41 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
             len(result.failed_urls),
         )
     )
-    print("Full results (including discovered links): {}".format(args.output.resolve()))
+    if result.out_of_scope_urls:
+        print(
+            "Out-of-scope destinations (reported, not crawled): {}".format(
+                len(result.out_of_scope_urls)
+            )
+        )
+    selector_totals = {}
+    for _, selector, count in result.click_selector_counts:
+        selector_totals[selector] = selector_totals.get(selector, 0) + count
+    if selector_totals:
+        print(
+            "Click selector matches: {}".format(
+                " | ".join(
+                    "{}={}".format(selector, count)
+                    for selector, count in selector_totals.items()
+                )
+            )
+        )
+    load_more_totals = {}
+    for _, selector, count in result.load_more_click_counts:
+        load_more_totals[selector] = load_more_totals.get(selector, 0) + count
+    if load_more_totals:
+        print(
+            "Load-more clicks: {}".format(
+                " | ".join(
+                    "{}={}".format(selector, count)
+                    for selector, count in load_more_totals.items()
+                )
+            )
+        )
+    print(
+        "Full results (including discovered links): {}".format(
+            args.output.resolve()
+        )
+    )
 
     return 0
 

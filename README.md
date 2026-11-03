@@ -4,9 +4,9 @@ An evolving collection of small, reusable web-scraping tools. The goal is to
 make each tool independently understandable, testable, installable, and usable
 by people, scripts, and AI-assisted workflows.
 
-> **Project status:** this repository currently contains package scaffolds and
-> documentation. The Fetcher, Crawler, and HTML Parser do not yet provide
-> implemented runtime functionality.
+> **Project status:** the Crawler provides a bounded core, optional Scrapy
+> adapter, and optional Playwright rendering. The Fetcher and HTML Parser are
+> still scaffolds.
 
 ## Start here
 
@@ -22,13 +22,29 @@ by people, scripts, and AI-assisted workflows.
 | Module | Responsibility | Current status |
 | --- | --- | --- |
 | [Fetcher](./modules/fetcher/) | Retrieve individual web resources over HTTP. | Scaffold |
-| [Crawler](./modules/crawler/) | Coordinate traversal across permitted pages. | Scaffold |
+| [Crawler](./modules/crawler/) | Coordinate bounded traversal with optional HTTP and browser rendering. | Implemented |
 | [HTML Parser](./modules/html-parser/) | Extract structured information from HTML. | Scaffold |
 
 Each module is intended to be an independently packaged Python project with
 its own `pyproject.toml`, source package, tests, documentation, discovery
 manifest, and AI skill. Keep module-specific dependencies local so users can
 install only what they need.
+
+## Run the crawler
+
+The [crawler workflow](./workflows/crawler/README.md) provides a standalone
+CLI. It uses Scrapy by default and can opt into Playwright for JavaScript
+rendering:
+
+```powershell
+python -m pip install -e "modules\crawler[scrapy,playwright]"
+python -m playwright install chromium
+python workflows\crawler\run.py "https://train.slsnp.hkpl.gov.hk/hkrw/en/index.html" --render-javascript -p 25 -d 2
+```
+
+The workflow writes discovered URL metadata to `crawl-result.json`; it does
+not save page bodies. Read the workflow guide for scope, robots.txt, and
+resource-limit details.
 
 ## Design for reuse
 

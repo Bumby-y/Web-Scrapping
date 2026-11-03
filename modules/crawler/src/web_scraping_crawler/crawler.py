@@ -25,6 +25,7 @@ class CrawlPolicy:
     max_pages: int
     max_depth: int
     max_elapsed_time: float
+    allowed_url_prefixes: Tuple[str, ...] = ()
 
     def __post_init__(self) -> None:
         if isinstance(self.allowed_domains, str):
@@ -42,6 +43,24 @@ class CrawlPolicy:
         if len(set(domains)) != len(domains):
             domains = tuple(dict.fromkeys(domains))
         object.__setattr__(self, "allowed_domains", domains)
+
+        if isinstance(self.allowed_url_prefixes, str):
+            raise ValueError("allowed_url_prefixes must be a sequence of URL prefixes")
+        try:
+            prefixes = tuple(
+                _normalize_url_prefix(prefix) for prefix in self.allowed_url_prefixes
+            )
+        except TypeError as exc:
+            raise ValueError(
+                "allowed_url_prefixes must be a sequence of URL prefixes"
+            ) from exc
+        if any(urlsplit(prefix).hostname not in domains for prefix in prefixes):
+            raise ValueError(
+                "allowed URL prefixes must use a host in allowed_domains"
+            )
+        object.__setattr__(
+            self, "allowed_url_prefixes", tuple(dict.fromkeys(prefixes))
+        )
 
         if isinstance(self.max_pages, bool) or not isinstance(self.max_pages, int):
             raise ValueError("max_pages must be a positive integer")
@@ -108,6 +127,9 @@ class CrawlResult:
     failed_urls: Tuple[CrawlFailure, ...]
     discovered_urls: Tuple[str, ...]
     link_edges: Tuple[LinkEdge, ...]
+    click_selector_counts: Tuple[Tuple[str, str, int], ...] = ()
+    load_more_click_counts: Tuple[Tuple[str, str, int], ...] = ()
+    out_of_scope_urls: Tuple[str, ...] = ()
 
     @property
     def edge_count(self) -> int:
@@ -133,7 +155,7 @@ class Crawler(Generic[PageT]):
         for seed in seeds:
             normalized = _normalize_url(seed)
             if not self._is_in_scope(normalized):
-                raise ValueError("seed URL is outside the configured allowed_domains")
+                raise ValueError("seed URL is outside the configured crawl scope")
             if normalized not in seed_set:
                 seed_set.add(normalized)
                 seed_urls.append(normalized)
@@ -187,7 +209,7 @@ class Crawler(Generic[PageT]):
                             url=url,
                             stage="redirect",
                             error_type="OutOfScopeRedirect",
-                            message="redirect destination is outside allowed_domains",
+                            message="redirect destination is outside the configured crawl scope",
                             redirect_url=final_url,
                         )
                     )
@@ -241,7 +263,11 @@ class Crawler(Generic[PageT]):
         return time.monotonic() - started >= self.policy.max_elapsed_time
 
     def _is_in_scope(self, url: str) -> bool:
-        return _is_url_in_scope(url, self.policy.allowed_domains)
+        return _is_url_in_scope(
+            url,
+            self.policy.allowed_domains,
+            self.policy.allowed_url_prefixes,
+        )
 
 
 def _failure(url: str, stage: FailureStage, exc: Exception) -> CrawlFailure:
@@ -327,9 +353,42 @@ def _normalize_url(url: str, base_url: Optional[str] = None) -> str:
     return urlunsplit((scheme, host, parsed.path, parsed.query, ""))
 
 
-def _is_url_in_scope(url: str, allowed_domains: Tuple[str, ...]) -> bool:
+def _normalize_url_prefix(url: str) -> str:
+    if not isinstance(url, str) or not url or url != url.strip():
+        raise ValueError("URL prefixes must be non-empty absolute HTTP(S) URLs")
     try:
-        host = urlsplit(url).hostname
-        return host is not None and _normalize_host(host) in allowed_domains
+        parsed = urlsplit(url)
+    except ValueError as exc:
+        raise ValueError("URL prefix is malformed") from exc
+    if (
+        parsed.query
+        or parsed.fragment
+        or not parsed.path.startswith("/")
+        or not parsed.path.endswith("/")
+    ):
+        raise ValueError(
+            "URL prefixes must have a slash-terminated path and no query or fragment"
+        )
+    return _normalize_url(url)
+
+
+def _is_url_in_scope(
+    url: str,
+    allowed_domains: Tuple[str, ...],
+    allowed_url_prefixes: Tuple[str, ...] = (),
+) -> bool:
+    try:
+        parsed = urlsplit(url)
+        host = parsed.hostname
+        if host is None or _normalize_host(host) not in allowed_domains:
+            return False
+        if not allowed_url_prefixes:
+            return True
+        return any(
+            prefix_parts.scheme == parsed.scheme
+            and prefix_parts.netloc == parsed.netloc
+            and parsed.path.startswith(prefix_parts.path)
+            for prefix_parts in (urlsplit(prefix) for prefix in allowed_url_prefixes)
+        )
     except ValueError:
         return False
