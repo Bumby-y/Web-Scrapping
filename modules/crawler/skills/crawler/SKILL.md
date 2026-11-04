@@ -41,6 +41,11 @@ not crawled. Pass `click_selectors=(...)` to customize this; avoid generic
 buttons unless their click behavior is expected and safe. Use
 `load_more_selectors=(...)` to expand content before scanning cards; loaded
 cards are restored after navigation when needed.
+The workflow's HTML discoverer records categorized URL references from common
+link/resource attributes, CSS URLs, metadata, visible text, and absolute URLs
+in scripts. Scope-rejected HTTP(S) references are marked `out_of_scope` in
+`link_references` and listed in `out_of_scope_urls`; resource references are
+recorded without being fetched as pages.
 For a card-heavy seed page, `index_click_workers` can be set to any positive
 integer to click disjoint card subsets using the seed page plus up to `N - 1`
 additional pages. It is opt-in and may multiply index and load-more requests;
@@ -54,10 +59,9 @@ honor site rate limits and use the smallest effective count.
 - Optionally set `CrawlPolicy.allowed_url_prefixes` to further restrict pages
   to slash-terminated absolute URL prefixes; each host must already be
   authorized.
-- Outside-prefix links are not scheduled. Ordinary extracted links outside the
-  prefix are omitted; rendered card-navigation destinations are reported in
-  `out_of_scope_urls`. Seeds and redirect destinations must also match a
-  configured prefix.
+- Outside-prefix references are recorded with `out_of_scope` status and not
+  scheduled. Seeds and redirect destinations must also match a configured
+  prefix.
 - Only HTTP(S) URLs are accepted. Relative links resolve against the final
   page URL. Scheme/host are lowercased, default ports and fragments are
   removed, and query strings and paths are preserved.

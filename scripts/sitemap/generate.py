@@ -103,7 +103,10 @@ def build_sitemap(urls: Sequence[str]) -> bytes:
     return document
 
 
-def build_mermaid(result: dict[str, Any]) -> str:
+def build_mermaid(
+    result: dict[str, Any],
+    include_external_links: bool = False,
+) -> str:
     """Build a Mermaid flowchart with stable node IDs and safely encoded labels."""
     successful = [
         _validated_url(value, "successful_urls")
@@ -119,12 +122,26 @@ def build_mermaid(result: dict[str, Any]) -> str:
         target = _validated_url(edge[1], "link_edges")
         edges.append((source, target))
 
-    external_urls = list(
-        dict.fromkeys(
-            _validated_url(value, "out_of_scope_urls")
-            for value in result.get("out_of_scope_urls", ())
+    external_urls = []
+    if include_external_links:
+        external_candidates = list(result.get("out_of_scope_urls", ()))
+        failures = result.get("failed_urls", [])
+        if not isinstance(failures, list):
+            raise ValueError("crawler result 'failed_urls' must be a list")
+        for index, failure in enumerate(failures):
+            if not isinstance(failure, dict):
+                raise ValueError(
+                    "failed_urls[{}] must be an object".format(index)
+                )
+            redirect_url = failure.get("redirect_url")
+            if redirect_url is not None:
+                external_candidates.append(redirect_url)
+        external_urls = list(
+            dict.fromkeys(
+                _validated_url(value, "external destinations")
+                for value in external_candidates
+            )
         )
-    )
     urls = list(dict.fromkeys(successful))
     for source, target in edges:
         if source not in urls:
@@ -184,6 +201,14 @@ def build_argument_parser() -> argparse.ArgumentParser:
         default=Path("sitemap.mmd"),
         help="Mermaid graph output path (default: sitemap.mmd).",
     )
+    parser.add_argument(
+        "--include-external-links",
+        action="store_true",
+        help=(
+            "Include out-of-scope destinations and redirect destinations in "
+            "the Mermaid diagram."
+        ),
+    )
     return parser
 
 
@@ -194,7 +219,10 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         result = _read_result(args.crawler_result)
         urls = _successful_urls(result)
         sitemap = build_sitemap(urls)
-        graph = build_mermaid(result)
+        graph = build_mermaid(
+            result,
+            include_external_links=args.include_external_links,
+        )
         if args.output.resolve() == args.graph_output.resolve():
             raise ValueError("sitemap and graph outputs must use different file paths")
         args.output.parent.mkdir(parents=True, exist_ok=True)

@@ -5,39 +5,16 @@ from __future__ import annotations
 import argparse
 import json
 import sys
-from html.parser import HTMLParser
 from pathlib import Path
-from typing import Iterable, Optional, Sequence
+from typing import Optional, Sequence
 from urllib.parse import urlsplit
 
-from web_scraping_crawler import CrawlPolicy, CrawlResult, crawl_with_scrapy
-
-
-class _AnchorParser(HTMLParser):
-    def __init__(self) -> None:
-        super().__init__(convert_charrefs=True)
-        self.links: list[str] = []
-
-    def handle_starttag(self, tag: str, attrs: list[tuple[str, Optional[str]]]) -> None:
-        if tag.lower() == "a":
-            self.links.extend(
-                value for name, value in attrs if name.lower() == "href" and value
-            )
-
-    def handle_startendtag(
-        self, tag: str, attrs: list[tuple[str, Optional[str]]]
-    ) -> None:
-        self.handle_starttag(tag, attrs)
-
-
-class HTMLAnchorLinkDiscoverer:
-    """Extract anchor hrefs from downloaded HTML without executing scripts."""
-
-    def discover_links(self, content: str) -> Iterable[str]:
-        parser = _AnchorParser()
-        parser.feed(content)
-        parser.close()
-        return parser.links
+from web_scraping_crawler import (
+    CrawlPolicy,
+    CrawlResult,
+    HTMLLinkDiscoverer,
+    crawl_with_scrapy,
+)
 
 
 def _arguments(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
@@ -198,6 +175,17 @@ def _result_dict(
         ],
         "discovered_urls": list(result.discovered_urls),
         "out_of_scope_urls": list(result.out_of_scope_urls),
+        "link_references": [
+            {
+                "source_url": reference.source_url,
+                "target_url": reference.target_url,
+                "category": reference.category,
+                "attribute": reference.attribute,
+                "scope": reference.scope,
+                "follow": reference.follow,
+            }
+            for reference in result.link_references
+        ],
         "link_edges": [list(edge) for edge in result.link_edges],
         "edge_count": result.edge_count,
         "click_selector_counts": [
@@ -263,7 +251,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     result = crawl_with_scrapy(
         seeds=tuple(args.seed_urls),
         policy=policy,
-        link_discoverer=HTMLAnchorLinkDiscoverer(),
+        link_discoverer=HTMLLinkDiscoverer(),
         render_javascript=args.render_javascript,
         render_wait_for=args.render_wait_for,
         click_selectors=(

@@ -9,12 +9,24 @@ import time
 from collections import deque
 from dataclasses import dataclass
 from numbers import Real
-from typing import Deque, Generic, Iterable, Literal, Optional, Protocol, Set, Tuple, TypeVar
+from typing import (
+    Deque,
+    Generic,
+    Iterable,
+    Literal,
+    Optional,
+    Protocol,
+    Set,
+    Tuple,
+    TypeVar,
+    Union,
+)
 from urllib.parse import urljoin, urlsplit, urlunsplit
 
 PageT = TypeVar("PageT")
 LinkEdge = Tuple[str, str]
 FailureStage = Literal["retrieve", "redirect", "discover"]
+LinkScope = Literal["in_scope", "out_of_scope", "non_http"]
 
 
 @dataclass(frozen=True)
@@ -103,8 +115,34 @@ class Retriever(Protocol[PageT]):
 class LinkDiscoverer(Protocol[PageT]):
     """Extracts candidate links from a retrieved payload."""
 
-    def discover_links(self, content: PageT) -> Iterable[str]:
-        """Return links relative to the retrieved page's effective URL."""
+    def discover_links(
+        self,
+        content: PageT,
+    ) -> Iterable[Union[str, "LinkReference"]]:
+        """Return URL strings or categorized LinkReference values."""
+
+
+@dataclass(frozen=True)
+class LinkReference:
+    """A URL reference found in a page, with its source element classification."""
+
+    url: str
+    category: str = "hyperlink"
+    attribute: Optional[str] = None
+    follow: bool = True
+    base_url: Optional[str] = None
+
+
+@dataclass(frozen=True)
+class CrawlLinkReference:
+    """A normalized page-to-URL reference and its crawl-scope classification."""
+
+    source_url: str
+    target_url: str
+    category: str
+    attribute: Optional[str]
+    scope: LinkScope
+    follow: bool
 
 
 @dataclass(frozen=True)
@@ -133,6 +171,7 @@ class CrawlResult:
     page_titles: Tuple[Tuple[str, Optional[str]], ...] = ()
     termination_reason: Optional[str] = None
     page_timings: Tuple[Tuple[str, str, float], ...] = ()
+    link_references: Tuple[CrawlLinkReference, ...] = ()
 
     @property
     def edge_count(self) -> int:
@@ -175,8 +214,43 @@ class Crawler(Generic[PageT]):
         discovered_set: Set[str] = set()
         link_edges = []
         edge_set: Set[LinkEdge] = set()
+        link_references = []
+        link_reference_set = set()
+        out_of_scope_urls = []
+        out_of_scope_set: Set[str] = set()
         started = time.monotonic()
         stopped_for_time = False
+
+        def record_reference(
+            source_url: str,
+            target_url: str,
+            category: str,
+            attribute: Optional[str],
+            scope: LinkScope,
+            follow: bool,
+        ) -> None:
+            record = CrawlLinkReference(
+                source_url=source_url,
+                target_url=target_url,
+                category=category,
+                attribute=attribute,
+                scope=scope,
+                follow=follow,
+            )
+            key = (
+                record.source_url,
+                record.target_url,
+                record.category,
+                record.attribute,
+                record.scope,
+                record.follow,
+            )
+            if key not in link_reference_set:
+                link_reference_set.add(key)
+                link_references.append(record)
+            if scope == "out_of_scope" and target_url not in out_of_scope_set:
+                out_of_scope_set.add(target_url)
+                out_of_scope_urls.append(target_url)
 
         while frontier and len(attempted) < self.policy.max_pages:
             if self._time_limit_reached(started):
@@ -209,6 +283,14 @@ class Crawler(Generic[PageT]):
                     failed_urls.append(_failure(url, "redirect", exc))
                     continue
                 if not self._is_in_scope(final_url):
+                    record_reference(
+                        url,
+                        final_url,
+                        "redirect",
+                        "location",
+                        "out_of_scope",
+                        False,
+                    )
                     failed_urls.append(
                         CrawlFailure(
                             url=url,
@@ -227,18 +309,69 @@ class Crawler(Generic[PageT]):
             try:
                 links = link_discoverer.discover_links(page.content)
                 if isinstance(links, str):
-                    raise TypeError("link discoverer must return an iterable of strings")
+                    raise TypeError(
+                        "link discoverer must return an iterable of strings "
+                        "or LinkReference values"
+                    )
                 for link in links:
                     if self._time_limit_reached(started):
                         stopped_for_time = True
                         break
-                    if not isinstance(link, str):
-                        raise TypeError("link discoverer must return strings")
+                    if isinstance(link, LinkReference):
+                        reference = link
+                    elif isinstance(link, str):
+                        reference = LinkReference(link)
+                    else:
+                        raise TypeError(
+                            "link discoverer must return strings or LinkReference values"
+                        )
+
+                    base_url = final_url
+                    if reference.base_url is not None:
+                        try:
+                            base_url = _normalize_url(
+                                reference.base_url,
+                                base_url=final_url,
+                            )
+                        except ValueError:
+                            base_url = final_url
                     try:
-                        target = _normalize_url(link, base_url=final_url)
+                        target = _normalize_url(
+                            reference.url,
+                            base_url=base_url,
+                        )
                     except ValueError:
+                        try:
+                            parsed = urlsplit(reference.url)
+                        except ValueError:
+                            continue
+                        if (
+                            parsed.scheme
+                            and parsed.scheme.lower() not in ("http", "https")
+                            and not reference.url.lower().startswith("data:")
+                        ):
+                            target = reference.url
+                            scope: LinkScope = "non_http"
+                        else:
+                            continue
+                    else:
+                        scope = (
+                            "in_scope"
+                            if self._is_in_scope(target)
+                            else "out_of_scope"
+                        )
+
+                    record_reference(
+                        final_url,
+                        target,
+                        reference.category,
+                        reference.attribute,
+                        scope,
+                        reference.follow,
+                    )
+                    if scope == "out_of_scope":
                         continue
-                    if not self._is_in_scope(target):
+                    if scope != "in_scope" or not reference.follow:
                         continue
 
                     edge = (final_url, target)
@@ -272,6 +405,8 @@ class Crawler(Generic[PageT]):
             discovered_urls=tuple(discovered_urls),
             link_edges=tuple(link_edges),
             termination_reason=termination_reason,
+            out_of_scope_urls=tuple(out_of_scope_urls),
+            link_references=tuple(link_references),
         )
 
     def _time_limit_reached(self, started: float) -> bool:

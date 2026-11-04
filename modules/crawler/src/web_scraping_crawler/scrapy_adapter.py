@@ -8,13 +8,15 @@ import time
 from collections.abc import Iterable
 from types import SimpleNamespace
 from typing import List, Optional, Set, Tuple
-from urllib.parse import urljoin
+from urllib.parse import urljoin, urlsplit
 
 from .crawler import (
     CrawlFailure,
+    CrawlLinkReference,
     CrawlPolicy,
     CrawlResult,
     LinkDiscoverer,
+    LinkReference,
     _is_url_in_scope,
     _normalize_url,
 )
@@ -26,7 +28,7 @@ CLICK_ABORT_NAVIGATION_TIMEOUT_MILLISECONDS = 2500
 CLICK_SETTLE_MILLISECONDS = 200
 LOAD_MORE_WAIT_MILLISECONDS = 2000
 DEFAULT_PLAYWRIGHT_CLICK_SELECTORS = (".child-card",)
-RETRY_COUNT = 4
+RETRY_COUNT = 2
 TOTAL_CONCURRENCY = 4
 PER_DOMAIN_CONCURRENCY = 2
 THROTTLE_START_DELAY_SECONDS = 1.0
@@ -846,7 +848,7 @@ def crawl_with_scrapy(
     class PolicySpider(Spider):
         name = "bounded_policy_crawl"
         custom_settings = {
-            "ROBOTSTXT_OBEY": False,
+            "ROBOTSTXT_OBEY": True,
             "DOWNLOAD_TIMEOUT": REQUEST_TIMEOUT_SECONDS,
             "RETRY_ENABLED": True,
             "RETRY_TIMES": RETRY_COUNT,
@@ -902,6 +904,8 @@ def crawl_with_scrapy(
             self._out_of_scope_url_set: Set[str] = set()
             self._edges: List[Tuple[str, str]] = []
             self._edge_set: Set[Tuple[str, str]] = set()
+            self._link_references: List[CrawlLinkReference] = []
+            self._link_reference_set = set()
             self._click_selector_counts: List[Tuple[str, str, int]] = []
             self._load_more_click_counts: List[Tuple[str, str, int]] = []
 
@@ -919,6 +923,13 @@ def crawl_with_scrapy(
 
             if 300 <= response.status < 400:
                 destination = self._redirect_destination(response)
+                if destination is not None:
+                    self._record_reference(
+                        page_url,
+                        destination,
+                        "redirect",
+                        "location",
+                    )
                 self._failures.append(
                     CrawlFailure(
                         url=page_url,
@@ -960,6 +971,12 @@ def crawl_with_scrapy(
                 self.policy.allowed_domains,
                 self.policy.allowed_url_prefixes,
             ):
+                self._record_reference(
+                    page_url,
+                    final_url,
+                    "redirect",
+                    "location",
+                )
                 self._failures.append(
                     CrawlFailure(
                         url=page_url,
@@ -1007,11 +1024,10 @@ def crawl_with_scrapy(
                 links = self.link_discoverer.discover_links(response.text)
                 if isinstance(links, str):
                     raise TypeError(
-                        "link discoverer must return an iterable of strings"
+                        "link discoverer must return an iterable of strings "
+                        "or LinkReference values"
                     )
                 candidates = list(links)
-                if any(not isinstance(link, str) for link in candidates):
-                    raise TypeError("link discoverer must return strings")
             except Exception as exc:
                 self._failures.append(
                     CrawlFailure(
@@ -1025,11 +1041,22 @@ def crawl_with_scrapy(
 
             if self.render_javascript:
                 if isinstance(click_result, dict):
-                    candidates.extend(click_result.get("urls", ()))
+                    candidates.extend(
+                        LinkReference(
+                            url=target,
+                            category="javascript_navigation",
+                            follow=True,
+                        )
+                        for target in click_result.get("urls", ())
+                    )
                     for target in click_result.get("out_of_scope_urls", ()):
-                        if target not in self._out_of_scope_url_set:
-                            self._out_of_scope_url_set.add(target)
-                            self._out_of_scope_urls.append(target)
+                        self._record_reference(
+                            final_url,
+                            target,
+                            "javascript_navigation",
+                            None,
+                            follow=True,
+                        )
                     self._click_selector_counts.extend(
                         (page_url, selector, count)
                         for selector, count in click_result.get(
@@ -1054,16 +1081,71 @@ def crawl_with_scrapy(
                         )
 
             requests = []
-            for link in candidates:
-                try:
-                    target = _normalize_url(link, base_url=final_url)
-                except ValueError:
+            for candidate in candidates:
+                if isinstance(candidate, LinkReference):
+                    reference = candidate
+                elif isinstance(candidate, str):
+                    reference = LinkReference(candidate)
+                else:
+                    self._failures.append(
+                        CrawlFailure(
+                            url=page_url,
+                            stage="discover",
+                            error_type="TypeError",
+                            message=(
+                                "link discoverer must return strings or "
+                                "LinkReference values"
+                            ),
+                        )
+                    )
                     continue
-                if not _is_url_in_scope(
+                reference_base = final_url
+                if reference.base_url is not None:
+                    try:
+                        reference_base = _normalize_url(
+                            reference.base_url,
+                            base_url=final_url,
+                        )
+                    except ValueError:
+                        reference_base = final_url
+                try:
+                    target = _normalize_url(
+                        reference.url,
+                        base_url=reference_base,
+                    )
+                except ValueError:
+                    try:
+                        parsed_target = urlsplit(reference.url)
+                    except ValueError:
+                        continue
+                    if (
+                        parsed_target.scheme
+                        and parsed_target.scheme.lower() not in ("http", "https")
+                        and not reference.url.lower().startswith("data:")
+                    ):
+                        self._record_reference(
+                            final_url,
+                            reference.url,
+                            reference.category,
+                            reference.attribute,
+                            scope="non_http",
+                            follow=reference.follow,
+                        )
+                    continue
+                is_in_scope = _is_url_in_scope(
                     target,
                     self.policy.allowed_domains,
                     self.policy.allowed_url_prefixes,
-                ):
+                )
+                self._record_reference(
+                    final_url,
+                    target,
+                    reference.category,
+                    reference.attribute,
+                    scope="in_scope" if is_in_scope else "out_of_scope",
+                    follow=reference.follow,
+                )
+                if not is_in_scope or not reference.follow:
                     continue
 
                 edge = (final_url, target)
@@ -1090,6 +1172,12 @@ def crawl_with_scrapy(
             rejection = request.meta.get("_crawl_scope_rejection")
 
             if rejection is not None:
+                self._record_reference(
+                    page_url,
+                    rejection["url"],
+                    "redirect",
+                    "location",
+                )
                 self._failures.append(
                     CrawlFailure(
                         url=page_url,
@@ -1104,13 +1192,21 @@ def crawl_with_scrapy(
             response = getattr(failure.value, "response", None)
             status = getattr(response, "status", None)
             if status is not None and 300 <= status < 400:
+                destination = self._redirect_destination(response)
+                if destination is not None:
+                    self._record_reference(
+                        page_url,
+                        destination,
+                        "redirect",
+                        "location",
+                    )
                 self._failures.append(
                     CrawlFailure(
                         url=page_url,
                         stage="redirect",
                         error_type="RedirectError",
                         message="redirect response could not be followed safely",
-                        redirect_url=self._redirect_destination(response),
+                        redirect_url=destination,
                     )
                 )
                 return
@@ -1143,6 +1239,7 @@ def crawl_with_scrapy(
                 page_titles=tuple(self._page_titles),
                 termination_reason=self._crawl_termination_reason,
                 page_timings=tuple(self._page_timings),
+                link_references=tuple(self._link_references),
             )
 
         def _request(self, url: str, depth: int):
@@ -1201,6 +1298,69 @@ def crawl_with_scrapy(
                 return _normalize_url(raw_location, base_url=response.url)
             except ValueError:
                 return urljoin(response.url, raw_location)
+
+        def _record_reference(
+            self,
+            source_url: str,
+            target_url: str,
+            category: str,
+            attribute: Optional[str],
+            scope: Optional[str] = None,
+            follow: bool = False,
+        ) -> None:
+            if scope is None:
+                try:
+                    normalized_target = _normalize_url(
+                        target_url,
+                        base_url=source_url,
+                    )
+                except ValueError:
+                    scope = "non_http"
+                    normalized_target = target_url
+                else:
+                    scope = (
+                        "in_scope"
+                        if _is_url_in_scope(
+                            normalized_target,
+                            self.policy.allowed_domains,
+                            self.policy.allowed_url_prefixes,
+                        )
+                        else "out_of_scope"
+                    )
+            else:
+                try:
+                    normalized_target = _normalize_url(
+                        target_url,
+                        base_url=source_url,
+                    )
+                except ValueError:
+                    normalized_target = target_url
+
+            reference = CrawlLinkReference(
+                source_url=source_url,
+                target_url=normalized_target,
+                category=category,
+                attribute=attribute,
+                scope=scope,
+                follow=follow,
+            )
+            key = (
+                reference.source_url,
+                reference.target_url,
+                reference.category,
+                reference.attribute,
+                reference.scope,
+                reference.follow,
+            )
+            if key not in self._link_reference_set:
+                self._link_reference_set.add(key)
+                self._link_references.append(reference)
+            if scope == "out_of_scope":
+                self._record(
+                    self._out_of_scope_urls,
+                    self._out_of_scope_url_set,
+                    normalized_target,
+                )
 
         @staticmethod
         def _record(values, seen, value):

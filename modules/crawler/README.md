@@ -70,11 +70,19 @@ result = Crawler(policy).crawl(
 
 `Retriever.retrieve(url)` returns a `RetrievalResult` containing an arbitrary
 payload and optionally the final URL after redirects.
-`LinkDiscoverer.discover_links(content)` returns candidate URL strings. The
-crawler resolves relative links against the final URL and checks scope before
-recording or scheduling them. Collaborators must enforce their own request
-timeouts; the elapsed-time limit prevents starting additional work but cannot
-interrupt a blocking collaborator.
+`LinkDiscoverer.discover_links(content)` returns candidate URL strings or
+`LinkReference` values. The crawler resolves relative links against the final
+URL and checks scope before recording or scheduling them. Collaborators must
+enforce their own request timeouts; the elapsed-time limit prevents starting
+additional work but cannot interrupt a blocking collaborator.
+
+Discoverers may also return `LinkReference` values to preserve the reference
+category, source attribute, optional HTML `<base href>`, and whether the
+reference should be followed as a page. The crawler records normalized entries
+in `CrawlResult.link_references` with `in_scope`, `out_of_scope`, or `non_http`
+scope, plus a `follow` flag. Out-of-scope HTTP(S) references are also collected in
+`out_of_scope_urls`; resource references such as images are recorded without
+being fetched as pages.
 
 ## Policy and URL identity
 
@@ -95,10 +103,10 @@ URL identity rules:
 - URLs containing credentials are rejected.
 - Normalized URLs are used consistently for scope checks, deduplication,
   visits, and discovered links.
-- An out-of-scope seed raises `ValueError`. Invalid or out-of-scope candidate
-  links are ignored for traversal. Redirects outside the allowed scope become
-  structured failures and are not parsed. Out-of-scope card-navigation targets
-  are reported separately in `out_of_scope_urls`.
+- An out-of-scope seed raises `ValueError`. Invalid candidate links are
+  ignored. Categorized out-of-scope HTTP(S) references are recorded but not
+  traversed. Redirects outside the allowed scope become structured failures
+  and link references.
 - With no `allowed_url_prefixes`, only exact-host rules apply. When prefixes
   are set, URLs outside every prefix are excluded from traversal and in-scope
   link edges.
@@ -114,9 +122,14 @@ URL identity rules:
   message. Failed URLs are also visited URLs.
 - `discovered_urls`: unique in-scope links found on retrieved pages, excluding
   seed URLs. Links are reported even when their depth prevents scheduling.
-- `out_of_scope_urls`: unique destinations reached by rendered card navigation
-  that are outside the configured crawl scope. They are reported but not
-  scheduled for crawling.
+- `out_of_scope_urls`: unique HTTP(S) destinations found in any extracted
+  reference or rendered navigation that are outside the configured crawl
+  scope. They are reported but not scheduled for crawling.
+- `link_references`: categorized page-to-URL references, including hyperlinks,
+  file links, text URLs, image/media/script/style resources, embedded resources,
+  form actions, citations, metadata references, and rendered JavaScript
+  navigation. Each record includes category, source attribute, scope, and
+  whether it is followed as a page.
 - `page_titles`: available `(url, title)` pairs from the Scrapy adapter. A
   missing or empty page title is represented as `None`; the framework-
   independent core does not infer titles from arbitrary payloads.

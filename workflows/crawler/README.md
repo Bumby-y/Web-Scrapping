@@ -1,7 +1,7 @@
 # Crawler workflow
 
-`run.py` is the standalone crawler CLI. It extracts anchor links from HTML
-using Scrapy by default, or can opt into Playwright Chromium to render
+`run.py` is the standalone crawler CLI. It extracts categorized URL references
+from HTML using Scrapy by default, or can opt into Playwright Chromium to render
 JavaScript applications such as Vue before discovering links. It saves crawl
 metadata and discovered URLs, not response bodies.
 
@@ -145,11 +145,18 @@ Host matching is exact. A seed on `example.com` does not implicitly authorize
 
 The JSON file includes the page, depth, and time limits used, the termination
 reason, visited and successful URLs, structured failures, in-scope discovered
-URLs, out-of-scope card-navigation destinations (reported but not crawled),
-unique in-scope link edges, and per-page counts of matches for each Playwright
+URLs, categorized `link_references`, unique `out_of_scope_urls`, unique
+in-scope navigation edges, and per-page counts of matches for each Playwright
 click selector and load-more clicks, including re-expansion clicks used to
-restore cards after navigation. It also includes a `pages` array with each
-successful page's URL and title:
+restore cards after navigation. References cover hyperlinks, file links,
+image/media and other resources, CSS URLs, embedded resources, form actions,
+metadata, citation URLs, visible-text URLs, and absolute URLs in script text.
+Each reference has its source page, target, category, attribute, scope
+(`in_scope`, `out_of_scope`, or `non_http`), and `follow` flag. Out-of-scope
+references are recorded but never scheduled; non-page resources such as images
+and file downloads are recorded with `follow: false` and are not fetched as
+pages. It also includes a
+`pages` array with each successful page's URL and title:
 
 ```json
 {

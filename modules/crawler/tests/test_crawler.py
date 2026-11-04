@@ -7,6 +7,7 @@ from web_scraping_crawler import (
     CrawlPolicy,
     CrawlResult,
     Crawler,
+    LinkReference,
     RetrievalResult,
 )
 
@@ -210,6 +211,47 @@ def test_skips_disallowed_subdomains_and_non_http_links():
     assert result.link_edges == ()
 
 
+def test_records_categorized_in_scope_and_out_of_scope_references():
+    root = "https://example.com/catalog/index.html"
+    page = "https://example.com/catalog/page.html"
+    image = "https://example.com/catalog/assets/cover.jpg"
+    retriever = FakeRetriever(
+        {root: RetrievalResult("root"), page: RetrievalResult("page")}
+    )
+    discoverer = FakeLinkDiscoverer(
+        {
+            "root": [
+                LinkReference("page.html", category="hyperlink", follow=True),
+                LinkReference("assets/cover.jpg", category="image", follow=False),
+                LinkReference(
+                    "https://other.example/file.pdf",
+                    category="download",
+                    attribute="href",
+                    follow=False,
+                ),
+                LinkReference("mailto:info@example.com", category="email", follow=False),
+            ],
+            "page": [],
+        }
+    )
+
+    result = Crawler(
+        make_policy(allowed_url_prefixes=("https://example.com/catalog/",))
+    ).crawl([root], retriever, discoverer)
+
+    assert result.visited_urls == (root, page)
+    assert result.discovered_urls == (page,)
+    assert result.out_of_scope_urls == ("https://other.example/file.pdf",)
+    references = {
+        (item.target_url, item.category, item.scope)
+        for item in result.link_references
+    }
+    assert (page, "hyperlink", "in_scope") in references
+    assert (image, "image", "in_scope") in references
+    assert ("https://other.example/file.pdf", "download", "out_of_scope") in references
+    assert ("mailto:info@example.com", "email", "non_http") in references
+
+
 def test_url_prefix_restricts_discovery_and_scheduling():
     root = "https://example.com/hkrw/en/index.html"
     child = "https://example.com/hkrw/en/detail.html"
@@ -285,6 +327,9 @@ def test_rejects_out_of_scope_redirect_and_records_structured_failure():
     assert result.failed_urls[0].stage == "redirect"
     assert result.failed_urls[0].error_type == "OutOfScopeRedirect"
     assert result.failed_urls[0].redirect_url == "https://elsewhere.example/"
+    assert result.out_of_scope_urls == ("https://elsewhere.example/",)
+    assert result.link_references[0].category == "redirect"
+    assert result.link_references[0].scope == "out_of_scope"
     assert discoverer.visited == []
 
 

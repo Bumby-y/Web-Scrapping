@@ -6,7 +6,11 @@ import pytest
 
 pytest.importorskip("scrapy")
 
-from web_scraping_crawler import CrawlPolicy, crawl_with_scrapy
+from web_scraping_crawler import (
+    CrawlPolicy,
+    HTMLLinkDiscoverer,
+    crawl_with_scrapy,
+)
 
 
 class LinkParser(HTMLParser):
@@ -54,6 +58,9 @@ def test_scrapy_adapter_honors_scope_robots_retries_and_page_limits():
                 )
                 body = "".join(
                     '<a href="{}">link</a>'.format(link) for link in links
+                ) + (
+                    '<img src="https://outside.example/assets/cover.png">'
+                    '<p>Read https://outside.example/article</p>'
                 )
                 self._respond(200, body.encode("utf-8"))
                 return
@@ -105,12 +112,27 @@ def test_scrapy_adapter_honors_scope_robots_retries_and_page_limits():
                 max_depth=1,
                 max_elapsed_time=30,
             ),
-            HtmlLinkDiscoverer(),
+            HTMLLinkDiscoverer(),
         )
     finally:
         server.shutdown()
         server.server_close()
         thread.join(timeout=5)
+
+    assert {
+        (reference.category, reference.scope)
+        for reference in result.link_references
+    } >= {
+        ("hyperlink", "in_scope"),
+        ("image", "out_of_scope"),
+        ("in_text", "out_of_scope"),
+        ("redirect", "out_of_scope"),
+    }
+    assert {
+        "https://outside.example/assets/cover.png",
+        "https://outside.example/article",
+        "http://localhost:{}/external".format(server.server_port),
+    } <= set(result.out_of_scope_urls)
 
     assert request_counts["/robots.txt"] >= 1
     assert request_counts.get("/robots-blocked", 0) == 0
