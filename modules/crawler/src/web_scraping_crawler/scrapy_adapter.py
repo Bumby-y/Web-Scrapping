@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import hashlib
+import time
 from collections.abc import Iterable
 from types import SimpleNamespace
 from typing import List, Optional, Set, Tuple
@@ -20,6 +21,8 @@ from .crawler import (
 
 REQUEST_TIMEOUT_SECONDS = 15
 CLICK_TIMEOUT_MILLISECONDS = 8000
+CLICK_NAVIGATION_TIMEOUT_MILLISECONDS = 1000
+CLICK_ABORT_NAVIGATION_TIMEOUT_MILLISECONDS = 2500
 CLICK_SETTLE_MILLISECONDS = 200
 LOAD_MORE_WAIT_MILLISECONDS = 2000
 DEFAULT_PLAYWRIGHT_CLICK_SELECTORS = (".child-card",)
@@ -39,6 +42,7 @@ def crawl_with_scrapy(
     click_selectors: Optional[Iterable[str]] = None,
     load_more_selectors: Optional[Iterable[str]] = None,
     max_load_more_clicks: int = 20,
+    index_click_workers: int = 1,
 ) -> CrawlResult:
     """Run one standalone Scrapy crawl and return its traversal metadata.
 
@@ -67,6 +71,14 @@ def crawl_with_scrapy(
         or max_load_more_clicks < 1
     ):
         raise ValueError("max_load_more_clicks must be a positive integer")
+    if (
+        isinstance(index_click_workers, bool)
+        or not isinstance(index_click_workers, int)
+        or index_click_workers < 1
+    ):
+        raise ValueError("index_click_workers must be a positive integer")
+    if index_click_workers > 1 and not render_javascript:
+        raise ValueError("index_click_workers requires render_javascript=True")
     if click_selectors is None:
         normalized_click_selectors = (
             DEFAULT_PLAYWRIGHT_CLICK_SELECTORS if render_javascript else ()
@@ -141,6 +153,9 @@ def crawl_with_scrapy(
             page_url,
             load_more_selectors,
             max_load_more_clicks,
+            render_wait_for,
+            index_click_workers,
+            card_indices,
         ):
             from playwright.async_api import Error as PlaywrightError
             from playwright.async_api import TimeoutError as PlaywrightTimeoutError
@@ -150,6 +165,8 @@ def crawl_with_scrapy(
             click_errors = []
             selector_counts = []
             load_more_click_counts = []
+            timing_totals = {}
+            worker_tasks = []
             load_more_click_totals = {
                 selector: 0 for selector in load_more_selectors
             }
@@ -161,6 +178,17 @@ def crawl_with_scrapy(
             def mark_main_frame_navigation(frame):
                 if frame == page.main_frame:
                     main_frame_navigation.set()
+
+            async def measure(phase, awaitable):
+                started = time.perf_counter()
+                try:
+                    return await awaitable
+                finally:
+                    timing_totals[phase] = (
+                        timing_totals.get(phase, 0.0)
+                        + time.perf_counter()
+                        - started
+                    )
 
             async def guard_navigation(route):
                 nonlocal navigation_attempts
@@ -182,14 +210,18 @@ def crawl_with_scrapy(
                             discovered.append(target)
                         else:
                             out_of_scope.append(target)
-                    await route.abort()
+                    await route.fulfill(
+                        status=200,
+                        content_type="text/html",
+                        body="",
+                    )
                     return
                 await route.continue_()
 
             async def wait_for_click_navigation(previous_url, previous_attempts):
                 deadline = (
                     asyncio.get_running_loop().time()
-                    + CLICK_TIMEOUT_MILLISECONDS / 1000
+                    + CLICK_NAVIGATION_TIMEOUT_MILLISECONDS / 1000
                 )
                 while (
                     page.url == previous_url
@@ -197,6 +229,114 @@ def crawl_with_scrapy(
                     and asyncio.get_running_loop().time() < deadline
                 ):
                     await page.wait_for_timeout(50)
+
+            async def restore_source_page():
+                try:
+                    current_url = _normalize_url(page.url)
+                except ValueError:
+                    current_url = None
+                if current_url == source_url:
+                    await measure(
+                        "page_restore_same_url_settle_seconds",
+                        page.wait_for_timeout(CLICK_SETTLE_MILLISECONDS),
+                    )
+                    return
+
+                try:
+                    return await measure(
+                        "page_restore_navigation_seconds",
+                        page.goto(
+                            source_url,
+                            wait_until="domcontentloaded",
+                            timeout=REQUEST_TIMEOUT_SECONDS * 1000,
+                        ),
+                    )
+                except PlaywrightError as exc:
+                    if "interrupted by another navigation" not in str(exc):
+                        raise
+                    try:
+                        await measure(
+                            "page_restore_inflight_wait_seconds",
+                            page.wait_for_load_state(
+                                "domcontentloaded",
+                                timeout=CLICK_ABORT_NAVIGATION_TIMEOUT_MILLISECONDS,
+                            ),
+                        )
+                    except PlaywrightTimeoutError:
+                        pass
+                    try:
+                        current_url = _normalize_url(page.url)
+                    except ValueError:
+                        current_url = None
+                    if current_url == source_url:
+                        return
+                    await measure(
+                        "page_restore_retry_settle_seconds",
+                        page.wait_for_timeout(CLICK_SETTLE_MILLISECONDS),
+                    )
+                    return await measure(
+                        "page_restore_retry_navigation_seconds",
+                        page.goto(
+                            source_url,
+                            wait_until="domcontentloaded",
+                            timeout=REQUEST_TIMEOUT_SECONDS * 1000,
+                        ),
+                    )
+
+            async def run_index_worker(worker_number, worker_card_indices):
+                worker_page = None
+                try:
+                    worker_page = await page.context.new_page()
+                    await measure(
+                        "index_worker_navigation_seconds",
+                        worker_page.goto(
+                            source_url,
+                            wait_until="domcontentloaded",
+                            timeout=REQUEST_TIMEOUT_SECONDS * 1000,
+                        ),
+                    )
+                    selectors_to_wait = (
+                        (render_wait_for,)
+                        if render_wait_for is not None
+                        else load_more_selectors or selectors
+                    )
+                    if selectors_to_wait:
+                        await measure(
+                            "index_worker_render_wait_seconds",
+                            worker_page.locator(
+                                selectors_to_wait[0]
+                            ).first.wait_for(
+                                state="visible",
+                                timeout=REQUEST_TIMEOUT_SECONDS * 1000,
+                            ),
+                        )
+                    return await discover_clicked_urls(
+                        worker_page,
+                        selectors,
+                        allowed_domains,
+                        allowed_url_prefixes,
+                        page_url,
+                        load_more_selectors,
+                        max_load_more_clicks,
+                        render_wait_for,
+                        1,
+                        worker_card_indices,
+                    )
+                except PlaywrightError as exc:
+                    return {
+                        "urls": (),
+                        "out_of_scope_urls": (),
+                        "page_title": None,
+                        "errors": (
+                            "index click worker {}: {}".format(worker_number, exc),
+                        ),
+                        "selector_counts": (),
+                        "load_more_click_counts": (),
+                        "timings": (),
+                    }
+                finally:
+                    if worker_page is not None:
+                        await worker_page.close()
 
             await page.route("**/*", guard_navigation)
             page.on("framenavigated", mark_main_frame_navigation)
@@ -218,8 +358,11 @@ def crawl_with_scrapy(
                             )
                             if not await locator.first.is_enabled():
                                 break
-                            await locator.first.click(
-                                timeout=CLICK_TIMEOUT_MILLISECONDS
+                            await measure(
+                                "load_more_click_seconds",
+                                locator.first.click(
+                                    timeout=CLICK_TIMEOUT_MILLISECONDS
+                                ),
                             )
                         except PlaywrightTimeoutError:
                             break
@@ -234,20 +377,26 @@ def crawl_with_scrapy(
                         restore_clicks += 1
                         load_more_click_totals[selector] += 1
                         try:
-                            await page.wait_for_function(
-                                """({previousCount, selector}) =>
-                                    document.querySelectorAll('.child-card').length > previousCount
-                                    || !document.querySelector(selector)
-                                """,
-                                arg={
-                                    "previousCount": previous_card_count,
-                                    "selector": selector,
-                                },
-                                timeout=CLICK_TIMEOUT_MILLISECONDS,
+                            await measure(
+                                "load_more_content_wait_seconds",
+                                page.wait_for_function(
+                                    """({previousCount, selector}) =>
+                                        document.querySelectorAll('.child-card').length > previousCount
+                                        || !document.querySelector(selector)
+                                    """,
+                                    arg={
+                                        "previousCount": previous_card_count,
+                                        "selector": selector,
+                                    },
+                                    timeout=CLICK_TIMEOUT_MILLISECONDS,
+                                ),
                             )
                         except PlaywrightTimeoutError:
                             break
-                        await page.wait_for_timeout(CLICK_SETTLE_MILLISECONDS)
+                        await measure(
+                            "load_more_settle_seconds",
+                            page.wait_for_timeout(CLICK_SETTLE_MILLISECONDS),
+                        )
 
                     if await page.locator(".child-card").count() >= expected_card_count:
                         return
@@ -271,8 +420,11 @@ def crawl_with_scrapy(
                             previous_card_count = await page.locator(
                                 ".child-card"
                             ).count()
-                            await locator.first.click(
-                                timeout=CLICK_TIMEOUT_MILLISECONDS
+                            await measure(
+                                "load_more_click_seconds",
+                                locator.first.click(
+                                    timeout=CLICK_TIMEOUT_MILLISECONDS
+                                ),
                             )
                         except PlaywrightError as exc:
                             click_errors.append(
@@ -284,37 +436,39 @@ def crawl_with_scrapy(
                         total_load_more_clicks += 1
                         made_progress = True
                         try:
-                            await page.wait_for_function(
-                                """({selector, previousCount, sourceUrl}) => {
-                                    const button = document.querySelector(selector);
-                                    return !button
-                                        || button.disabled
-                                        || button.getAttribute('aria-disabled') === 'true'
-                                        || window.location.href !== sourceUrl
-                                        || document.querySelectorAll('.child-card').length > previousCount;
-                                }""",
-                                arg={
-                                    "selector": selector,
-                                    "previousCount": previous_card_count,
-                                    "sourceUrl": source_url,
-                                },
-                                timeout=CLICK_TIMEOUT_MILLISECONDS,
+                            await measure(
+                                "load_more_content_wait_seconds",
+                                page.wait_for_function(
+                                    """({selector, previousCount, sourceUrl}) => {
+                                        const button = document.querySelector(selector);
+                                        return !button
+                                            || button.disabled
+                                            || button.getAttribute('aria-disabled') === 'true'
+                                            || window.location.href !== sourceUrl
+                                            || document.querySelectorAll('.child-card').length > previousCount;
+                                    }""",
+                                    arg={
+                                        "selector": selector,
+                                        "previousCount": previous_card_count,
+                                        "sourceUrl": source_url,
+                                    },
+                                    timeout=CLICK_TIMEOUT_MILLISECONDS,
+                                ),
                             )
                         except PlaywrightTimeoutError:
                             made_progress = False
 
-                        await page.wait_for_timeout(CLICK_SETTLE_MILLISECONDS)
+                        await measure(
+                            "load_more_settle_seconds",
+                            page.wait_for_timeout(CLICK_SETTLE_MILLISECONDS),
+                        )
 
                         try:
                             current_url = _normalize_url(page.url)
                         except ValueError:
                             current_url = None
                         if current_url is None:
-                            await page.goto(
-                                source_url,
-                                wait_until="domcontentloaded",
-                                timeout=REQUEST_TIMEOUT_SECONDS * 1000,
-                            )
+                            await restore_source_page()
                             break
                         if current_url != source_url:
                             if _is_url_in_scope(
@@ -326,19 +480,19 @@ def crawl_with_scrapy(
                             else:
                                 out_of_scope.append(current_url)
                             try:
-                                await page.go_back(
-                                    wait_until="domcontentloaded",
-                                    timeout=CLICK_TIMEOUT_MILLISECONDS,
+                                await measure(
+                                    "page_restore_navigation_seconds",
+                                    page.go_back(
+                                        wait_until="domcontentloaded",
+                                        timeout=CLICK_TIMEOUT_MILLISECONDS,
+                                    ),
                                 )
                             except PlaywrightError:
-                                await page.goto(
-                                    source_url,
-                                    wait_until="domcontentloaded",
-                                    timeout=REQUEST_TIMEOUT_SECONDS * 1000,
-                                )
+                                await restore_source_page()
                             break
                         if not made_progress:
                             break
+                selector_card_counts = {}
                 for selector in selectors:
                     locator = page.locator(selector)
                     try:
@@ -348,22 +502,72 @@ def crawl_with_scrapy(
                         )
                     except PlaywrightTimeoutError:
                         selector_counts.append((selector, 0))
+                        selector_card_counts[selector] = 0
                         continue
                     try:
                         count = await locator.count()
                     except PlaywrightError as exc:
                         click_errors.append("{}: {}".format(selector, exc))
+                        selector_counts.append((selector, 0))
+                        selector_card_counts[selector] = 0
                         continue
                     selector_counts.append((selector, count))
-                    for index in range(count):
+                    selector_card_counts[selector] = count
+
+                if index_click_workers > 1 and card_indices is None:
+                    for worker_number in range(1, index_click_workers):
+                        worker_card_indices = {
+                            selector: tuple(
+                                index
+                                for index in range(count)
+                                if index % index_click_workers == worker_number
+                            )
+                            for selector, count in selector_card_counts.items()
+                        }
+                        worker_tasks.append(
+                            asyncio.create_task(
+                                run_index_worker(
+                                    worker_number,
+                                    worker_card_indices,
+                                )
+                            )
+                        )
+
+                for selector in selectors:
+                    locator = page.locator(selector)
+                    count = selector_card_counts[selector]
+                    if card_indices is not None:
+                        indices_to_click = card_indices.get(selector, ())
+                    elif index_click_workers > 1:
+                        indices_to_click = tuple(
+                            index
+                            for index in range(count)
+                            if index % index_click_workers == 0
+                        )
+                    else:
+                        indices_to_click = range(count)
+                    for index in indices_to_click:
                         discovered_before_click = len(discovered)
                         previous_url = page.url
                         previous_navigation_attempts = navigation_attempts
                         main_frame_navigation.clear()
                         try:
-                            await locator.nth(index).click(
-                                timeout=CLICK_TIMEOUT_MILLISECONDS,
-                                no_wait_after=True,
+                            await locator.nth(index).wait_for(
+                                state="visible",
+                                timeout=LOAD_MORE_WAIT_MILLISECONDS,
+                            )
+                        except PlaywrightTimeoutError:
+                            await measure(
+                                "loaded_cards_restore_seconds",
+                                restore_loaded_cards(count),
+                            )
+                        try:
+                            await measure(
+                                "card_click_seconds",
+                                locator.nth(index).click(
+                                    timeout=CLICK_TIMEOUT_MILLISECONDS,
+                                    no_wait_after=True,
+                                ),
                             )
                         except PlaywrightError as exc:
                             if len(discovered) == discovered_before_click:
@@ -371,26 +575,37 @@ def crawl_with_scrapy(
                                     "{}[{}]: {}".format(selector, index, exc)
                                 )
                         else:
-                            await wait_for_click_navigation(
-                                previous_url, previous_navigation_attempts
+                            await measure(
+                                "card_navigation_detection_seconds",
+                                wait_for_click_navigation(
+                                    previous_url, previous_navigation_attempts
+                                ),
                             )
-                            await page.wait_for_timeout(CLICK_SETTLE_MILLISECONDS)
+                            await measure(
+                                "card_settle_seconds",
+                                page.wait_for_timeout(CLICK_SETTLE_MILLISECONDS),
+                            )
 
                         if navigation_attempts != previous_navigation_attempts:
                             if not main_frame_navigation.is_set():
                                 try:
-                                    await asyncio.wait_for(
-                                        main_frame_navigation.wait(),
-                                        timeout=CLICK_TIMEOUT_MILLISECONDS / 1000,
+                                    await measure(
+                                        "card_navigation_event_wait_seconds",
+                                        asyncio.wait_for(
+                                            main_frame_navigation.wait(),
+                                            timeout=(
+                                                CLICK_ABORT_NAVIGATION_TIMEOUT_MILLISECONDS
+                                                / 1000
+                                            ),
+                                        ),
                                     )
                                 except asyncio.TimeoutError:
                                     pass
-                            await page.goto(
-                                source_url,
-                                wait_until="domcontentloaded",
-                                timeout=REQUEST_TIMEOUT_SECONDS * 1000,
+                            await restore_source_page()
+                            await measure(
+                                "loaded_cards_restore_seconds",
+                                restore_loaded_cards(count),
                             )
-                            await restore_loaded_cards(count)
                             continue
 
                         try:
@@ -399,12 +614,11 @@ def crawl_with_scrapy(
                             current_url = None
 
                         if current_url is None:
-                            await page.goto(
-                                source_url,
-                                wait_until="domcontentloaded",
-                                timeout=REQUEST_TIMEOUT_SECONDS * 1000,
+                            await restore_source_page()
+                            await measure(
+                                "loaded_cards_restore_seconds",
+                                restore_loaded_cards(count),
                             )
-                            await restore_loaded_cards(count)
                         elif current_url != source_url:
                             if _is_url_in_scope(
                                 current_url,
@@ -413,18 +627,42 @@ def crawl_with_scrapy(
                             ):
                                 discovered.append(current_url)
                             try:
-                                await page.go_back(
-                                    wait_until="domcontentloaded",
-                                    timeout=CLICK_TIMEOUT_MILLISECONDS,
+                                await measure(
+                                    "page_restore_navigation_seconds",
+                                    page.go_back(
+                                        wait_until="domcontentloaded",
+                                        timeout=CLICK_TIMEOUT_MILLISECONDS,
+                                    ),
                                 )
                             except PlaywrightError:
-                                await page.goto(
-                                    source_url,
-                                    wait_until="domcontentloaded",
-                                    timeout=REQUEST_TIMEOUT_SECONDS * 1000,
-                                )
-                            await restore_loaded_cards(count)
+                                await restore_source_page()
+                            await measure(
+                                "loaded_cards_restore_seconds",
+                                restore_loaded_cards(count),
+                            )
+                if worker_tasks:
+                    for worker_result in await asyncio.gather(*worker_tasks):
+                        discovered.extend(worker_result.get("urls", ()))
+                        out_of_scope.extend(
+                            worker_result.get("out_of_scope_urls", ())
+                        )
+                        click_errors.extend(worker_result.get("errors", ()))
+                        for selector, clicks in worker_result.get(
+                            "load_more_click_counts", ()
+                        ):
+                            load_more_click_totals[selector] = (
+                                load_more_click_totals.get(selector, 0) + clicks
+                            )
+                        for phase, seconds in worker_result.get("timings", ()):
+                            timing_totals[phase] = (
+                                timing_totals.get(phase, 0.0) + seconds
+                            )
             finally:
+                for worker_task in worker_tasks:
+                    if not worker_task.done():
+                        worker_task.cancel()
+                if worker_tasks:
+                    await asyncio.gather(*worker_tasks, return_exceptions=True)
                 page.remove_listener(
                     "framenavigated", mark_main_frame_navigation
                 )
@@ -437,9 +675,11 @@ def crawl_with_scrapy(
             return {
                 "urls": tuple(dict.fromkeys(discovered)),
                 "out_of_scope_urls": tuple(dict.fromkeys(out_of_scope)),
+                "page_title": await page.title(),
                 "errors": tuple(click_errors),
                 "selector_counts": tuple(selector_counts),
                 "load_more_click_counts": tuple(load_more_click_counts),
+                "timings": tuple(timing_totals.items()),
             }
 
         class GracefulPlaywrightDownloadHandler(ScrapyPlaywrightDownloadHandler):
@@ -591,6 +831,17 @@ def crawl_with_scrapy(
         def spider_closed(self, spider, reason):
             if self.call is not None and self.call.active():
                 self.call.cancel()
+            rejected_for_page_limit = spider.crawler.stats.get_value(
+                "crawler/pages_rejected_limit", 0
+            )
+            if rejected_for_page_limit:
+                spider._crawl_termination_reason = "page_limit"
+            elif reason == "time_limit":
+                spider._crawl_termination_reason = "time_limit"
+            elif reason == "finished":
+                spider._crawl_termination_reason = "frontier_exhausted"
+            else:
+                spider._crawl_termination_reason = "stopped:{}".format(reason)
 
     class PolicySpider(Spider):
         name = "bounded_policy_crawl"
@@ -623,21 +874,27 @@ def crawl_with_scrapy(
             click_selectors: Tuple[str, ...],
             load_more_selectors: Tuple[str, ...],
             max_load_more_clicks: int,
+            index_click_workers: int,
             **kwargs,
         ):
             super().__init__(**kwargs)
             self.policy = policy
             self.seeds = seeds
+            self._scheduled_urls: Set[str] = set(seeds)
             self.link_discoverer = link_discoverer
             self.render_javascript = render_javascript
             self.render_wait_for = render_wait_for
             self.click_selectors = click_selectors
             self.load_more_selectors = load_more_selectors
             self.max_load_more_clicks = max_load_more_clicks
+            self.index_click_workers = index_click_workers
+            self._crawl_termination_reason: Optional[str] = None
             self._visited: List[str] = []
             self._visited_set: Set[str] = set()
             self._successful: List[str] = []
             self._successful_set: Set[str] = set()
+            self._page_titles: List[Tuple[str, Optional[str]]] = []
+            self._page_timings: List[Tuple[str, str, float]] = []
             self._failures: List[CrawlFailure] = []
             self._discovered: List[str] = []
             self._discovered_set: Set[str] = set()
@@ -715,6 +972,36 @@ def crawl_with_scrapy(
                 return
 
             self._record(self._successful, self._successful_set, page_url)
+            download_latency = response.meta.get("download_latency")
+            if isinstance(download_latency, (int, float)):
+                self._page_timings.append(
+                    (page_url, "request_total_seconds", float(download_latency))
+                )
+            page_title = response.css("title::text").get()
+            if isinstance(page_title, str):
+                page_title = " ".join(page_title.split()) or None
+
+            click_result = None
+            if self.render_javascript:
+                page_methods = response.meta.get("playwright_page_methods", ())
+                click_result = next(
+                    (
+                        method.result
+                        for method in page_methods
+                        if method.method is discover_clicked_urls
+                    ),
+                    None,
+                )
+                if isinstance(click_result, dict):
+                    rendered_title = click_result.get("page_title")
+                    if isinstance(rendered_title, str):
+                        page_title = " ".join(rendered_title.split()) or None
+                    self._page_timings.extend(
+                        (page_url, phase, seconds)
+                        for phase, seconds in click_result.get("timings", ())
+                    )
+            self._page_titles.append((page_url, page_title))
+
             depth = response.meta.get("_crawl_depth", 0)
             try:
                 links = self.link_discoverer.discover_links(response.text)
@@ -737,15 +1024,6 @@ def crawl_with_scrapy(
                 return
 
             if self.render_javascript:
-                page_methods = response.meta.get("playwright_page_methods", ())
-                click_result = next(
-                    (
-                        method.result
-                        for method in page_methods
-                        if method.method is discover_clicked_urls
-                    ),
-                    None,
-                )
                 if isinstance(click_result, dict):
                     candidates.extend(click_result.get("urls", ()))
                     for target in click_result.get("out_of_scope_urls", ()):
@@ -796,7 +1074,11 @@ def crawl_with_scrapy(
                     self._record(
                         self._discovered, self._discovered_set, target
                     )
-                if depth < self.policy.max_depth:
+                if (
+                    depth < self.policy.max_depth
+                    and target not in self._scheduled_urls
+                ):
+                    self._scheduled_urls.add(target)
                     requests.append(self._request(target, depth + 1))
 
             return requests
@@ -858,6 +1140,9 @@ def crawl_with_scrapy(
                 click_selector_counts=tuple(self._click_selector_counts),
                 load_more_click_counts=tuple(self._load_more_click_counts),
                 out_of_scope_urls=tuple(self._out_of_scope_urls),
+                page_titles=tuple(self._page_titles),
+                termination_reason=self._crawl_termination_reason,
+                page_timings=tuple(self._page_timings),
             )
 
         def _request(self, url: str, depth: int):
@@ -878,18 +1163,24 @@ def crawl_with_scrapy(
                             timeout=REQUEST_TIMEOUT_SECONDS * 1000,
                         )
                     )
-                if self.click_selectors or self.load_more_selectors:
-                    page_methods.append(
-                        PageMethod(
-                            discover_clicked_urls,
-                            self.click_selectors,
-                            self.policy.allowed_domains,
-                            self.policy.allowed_url_prefixes,
-                            url,
-                            self.load_more_selectors,
-                            self.max_load_more_clicks,
-                        )
+                page_methods.append(
+                    PageMethod(
+                        discover_clicked_urls,
+                        self.click_selectors,
+                        self.policy.allowed_domains,
+                        self.policy.allowed_url_prefixes,
+                        url,
+                        self.load_more_selectors,
+                        self.max_load_more_clicks,
+                        self.render_wait_for,
+                        (
+                            self.index_click_workers
+                            if url in self.seeds
+                            else 1
+                        ),
+                        None,
                     )
+                )
                 if page_methods:
                     meta["playwright_page_methods"] = page_methods
 
@@ -931,7 +1222,9 @@ def crawl_with_scrapy(
                 "PLAYWRIGHT_BROWSER_TYPE": "chromium",
                 "PLAYWRIGHT_LAUNCH_OPTIONS": {"headless": True},
                 "PLAYWRIGHT_MAX_CONTEXTS": 2,
-                "PLAYWRIGHT_MAX_PAGES_PER_CONTEXT": 2,
+                "PLAYWRIGHT_MAX_PAGES_PER_CONTEXT": max(
+                    2, index_click_workers
+                ),
                 "PLAYWRIGHT_DEFAULT_NAVIGATION_TIMEOUT": (
                     REQUEST_TIMEOUT_SECONDS * 1000
                 ),
@@ -950,6 +1243,7 @@ def crawl_with_scrapy(
         click_selectors=normalized_click_selectors,
         load_more_selectors=normalized_load_more_selectors,
         max_load_more_clicks=max_load_more_clicks,
+        index_click_workers=index_click_workers,
     )
     process.start()
 

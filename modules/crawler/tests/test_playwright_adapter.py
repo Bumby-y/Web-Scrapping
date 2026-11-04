@@ -34,9 +34,11 @@ def test_playwright_renders_javascript_and_discovers_image_wrapped_anchor():
                 return
             if self.path == "/hkrw/en/index.html":
                 body = (
+                    "<!doctype html><title>Initial index title</title>"
                     "<div id='app'>Loading...</div>"
                     "<script>"
                     "setTimeout(function () {"
+                    "document.title = 'Rendered index title';"
                     "document.querySelector('#app').innerHTML = "
                     "\"<a href='detail'><img src='/cover.png'></a>\" + "
                     "\"<div class='child-card'>card</div>\" + "
@@ -89,6 +91,7 @@ def test_playwright_renders_javascript_and_discovers_image_wrapped_anchor():
                 return
             if self.path == "/hkrw/en/detail":
                 body = (
+                    "<!doctype html><title>Detail page title</title>"
                     "<h1>Detail</h1>"
                     "<script>"
                     "setTimeout(function () {"
@@ -150,9 +153,13 @@ result = crawl_with_scrapy(
     render_javascript=True,
     click_selectors=("[role=button]",),
     load_more_selectors=(".section-more-btn",),
+    index_click_workers=3,
 )
 print(json.dumps({
     "visited_urls": result.visited_urls,
+    "termination_reason": result.termination_reason,
+    "page_titles": result.page_titles,
+    "page_timings": result.page_timings,
     "discovered_urls": result.discovered_urls,
     "out_of_scope_urls": result.out_of_scope_urls,
     "click_selector_counts": result.click_selector_counts,
@@ -188,6 +195,21 @@ print(json.dumps({
     assert "Queue.join was never awaited" not in completed.stderr
     result = json.loads(completed.stdout.strip().splitlines()[-1])
     assert root in result["visited_urls"]
+    assert result["termination_reason"] in {
+        "frontier_exhausted",
+        "page_limit",
+        "time_limit",
+    }
+    assert not result["failed_urls"], json.dumps(result, indent=2)
+    assert (root, "Rendered index title") in [
+        tuple(page_title) for page_title in result["page_titles"]
+    ], json.dumps(result, indent=2)
+    navigation_event_wait_seconds = sum(
+        timing
+        for page_url, phase, timing in result["page_timings"]
+        if page_url == root and phase == "card_navigation_event_wait_seconds"
+    )
+    assert navigation_event_wait_seconds < 6, json.dumps(result, indent=2)
     assert "http://127.0.0.1:{}/hkrw/en/detail".format(server.server_port) in (
         result["discovered_urls"]
     ), json.dumps(result, indent=2)
@@ -217,7 +239,17 @@ print(json.dumps({
         "[role=button]",
         1,
     ) in [tuple(count) for count in result["click_selector_counts"]]
+    worker_navigation_seconds = sum(
+        seconds
+        for page_url, phase, seconds in result["page_timings"]
+        if page_url == root and phase == "index_worker_navigation_seconds"
+    )
+    assert worker_navigation_seconds > 0
+    assert requests.count("/hkrw/en/index.html") >= 3
     detail_url = "http://127.0.0.1:{}/hkrw/en/detail".format(server.server_port)
+    assert (detail_url, "Detail page title") in [
+        tuple(page_title) for page_title in result["page_titles"]
+    ]
     assert (
         detail_url,
         ".child-card",

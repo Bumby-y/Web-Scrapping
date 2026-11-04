@@ -29,6 +29,10 @@ def _read_result(path: Path) -> dict[str, Any]:
             raise ValueError(
                 "crawler result must contain a '{}' list".format(key)
             )
+    if "out_of_scope_urls" in data and not isinstance(
+        data["out_of_scope_urls"], list
+    ):
+        raise ValueError("crawler result 'out_of_scope_urls' must be a list")
     return data
 
 
@@ -115,20 +119,47 @@ def build_mermaid(result: dict[str, Any]) -> str:
         target = _validated_url(edge[1], "link_edges")
         edges.append((source, target))
 
+    external_urls = list(
+        dict.fromkeys(
+            _validated_url(value, "out_of_scope_urls")
+            for value in result.get("out_of_scope_urls", ())
+        )
+    )
     urls = list(dict.fromkeys(successful))
     for source, target in edges:
         if source not in urls:
             urls.append(source)
         if target not in urls:
             urls.append(target)
+    external_urls = [url for url in external_urls if url not in urls]
+    urls.extend(external_urls)
     node_ids = {url: "url{}".format(index) for index, url in enumerate(urls)}
 
     lines = ["flowchart TD"]
-    for url, node_id in node_ids.items():
-        label = quote(url, safe=":/?#=%-._~")
-        lines.append('  {}["{}"]'.format(node_id, label))
+    for url in urls:
+        if url not in external_urls:
+            label = quote(url, safe=":/?#=%-._~")
+            lines.append('  {}["{}"]'.format(node_ids[url], label))
     for source, target in edges:
         lines.append("  {} --> {}".format(node_ids[source], node_ids[target]))
+    if external_urls:
+        lines.extend(
+            [
+                '  subgraph external["Out-of-scope destinations (not crawled)"]',
+            ]
+        )
+        for url in external_urls:
+            label = quote(url, safe=":/?#=%-._~")
+            lines.append('    {}["{}"]'.format(node_ids[url], label))
+        lines.extend(
+            [
+                "  end",
+                "  classDef external fill:#fff3cd,stroke:#b8860b,color:#333",
+                "  class {} external".format(
+                    ",".join(node_ids[url] for url in external_urls)
+                ),
+            ]
+        )
     return "\n".join(lines) + "\n"
 
 

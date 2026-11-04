@@ -120,7 +120,7 @@ class CrawlFailure:
 
 @dataclass(frozen=True)
 class CrawlResult:
-    """Traversal metadata; response bodies and page data are not retained."""
+    """Traversal metadata and available page titles; response bodies are not retained."""
 
     visited_urls: Tuple[str, ...]
     successful_urls: Tuple[str, ...]
@@ -130,6 +130,9 @@ class CrawlResult:
     click_selector_counts: Tuple[Tuple[str, str, int], ...] = ()
     load_more_click_counts: Tuple[Tuple[str, str, int], ...] = ()
     out_of_scope_urls: Tuple[str, ...] = ()
+    page_titles: Tuple[Tuple[str, Optional[str]], ...] = ()
+    termination_reason: Optional[str] = None
+    page_timings: Tuple[Tuple[str, str, float], ...] = ()
 
     @property
     def edge_count(self) -> int:
@@ -173,9 +176,11 @@ class Crawler(Generic[PageT]):
         link_edges = []
         edge_set: Set[LinkEdge] = set()
         started = time.monotonic()
+        stopped_for_time = False
 
         while frontier and len(attempted) < self.policy.max_pages:
             if self._time_limit_reached(started):
+                stopped_for_time = True
                 break
 
             url, depth = frontier.popleft()
@@ -217,6 +222,7 @@ class Crawler(Generic[PageT]):
 
             successful_urls.append(url)
             if self._time_limit_reached(started):
+                stopped_for_time = True
                 continue
             try:
                 links = link_discoverer.discover_links(page.content)
@@ -224,6 +230,7 @@ class Crawler(Generic[PageT]):
                     raise TypeError("link discoverer must return an iterable of strings")
                 for link in links:
                     if self._time_limit_reached(started):
+                        stopped_for_time = True
                         break
                     if not isinstance(link, str):
                         raise TypeError("link discoverer must return strings")
@@ -251,12 +258,20 @@ class Crawler(Generic[PageT]):
             except Exception as exc:
                 failed_urls.append(_failure(url, "discover", exc))
 
+        if stopped_for_time:
+            termination_reason = "time_limit"
+        elif frontier and len(attempted) >= self.policy.max_pages:
+            termination_reason = "page_limit"
+        else:
+            termination_reason = "frontier_exhausted"
+
         return CrawlResult(
             visited_urls=tuple(visited_urls),
             successful_urls=tuple(successful_urls),
             failed_urls=tuple(failed_urls),
             discovered_urls=tuple(discovered_urls),
             link_edges=tuple(link_edges),
+            termination_reason=termination_reason,
         )
 
     def _time_limit_reached(self, started: float) -> bool:

@@ -1,4 +1,5 @@
 from dataclasses import FrozenInstanceError
+from unittest.mock import patch
 
 import pytest
 
@@ -66,6 +67,39 @@ def test_normalizes_seed_and_deduplicates_fragments_and_default_ports():
     assert retriever.visited == ["http://example.com/a?x=1"]
     assert result.visited_urls == ("http://example.com/a?x=1",)
     assert result.successful_urls == ("http://example.com/a?x=1",)
+    assert result.termination_reason == "frontier_exhausted"
+
+
+def test_reports_page_limit_when_frontier_remains():
+    root = "http://example.com/"
+    child = "http://example.com/child"
+    retriever = FakeRetriever({root: RetrievalResult("root")})
+    discoverer = FakeLinkDiscoverer({"root": [child]})
+
+    result = Crawler(make_policy(max_pages=1)).crawl(
+        [root], retriever, discoverer
+    )
+
+    assert result.visited_urls == (root,)
+    assert result.discovered_urls == (child,)
+    assert result.termination_reason == "page_limit"
+
+
+def test_reports_time_limit_when_it_prevents_frontier_processing():
+    root = "http://example.com/"
+    retriever = FakeRetriever({})
+    discoverer = FakeLinkDiscoverer({})
+
+    with patch(
+        "web_scraping_crawler.crawler.time.monotonic",
+        side_effect=(0.0, 2.0),
+    ):
+        result = Crawler(make_policy(max_elapsed_time=1)).crawl(
+            [root], retriever, discoverer
+        )
+
+    assert result.visited_urls == ()
+    assert result.termination_reason == "time_limit"
 
 
 def test_normalizes_scheme_host_https_default_port_and_fragment():

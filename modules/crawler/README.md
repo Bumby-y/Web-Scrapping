@@ -117,6 +117,12 @@ URL identity rules:
 - `out_of_scope_urls`: unique destinations reached by rendered card navigation
   that are outside the configured crawl scope. They are reported but not
   scheduled for crawling.
+- `page_titles`: available `(url, title)` pairs from the Scrapy adapter. A
+  missing or empty page title is represented as `None`; the framework-
+  independent core does not infer titles from arbitrary payloads.
+- `termination_reason`: `frontier_exhausted`, `page_limit`, or `time_limit`.
+  The Scrapy adapter reports other Scrapy closure reasons as
+  `stopped:<reason>`.
 - `link_edges`: unique directed `(source_url, target_url)` pairs for
   in-scope links. `edge_count` is the number of these pairs.
 
@@ -194,7 +200,11 @@ are discovered. If a selector has no visible matches, its count is recorded as
 zero without marking the page as failed. The crawl result includes the number
 of matched elements for each selector on each rendered page. Full-page
 navigation requests are intercepted without waiting for the destination page
-to finish loading. In-scope destinations are queued through Scrapy under its
+to finish loading. After each click, the adapter waits up to one second to
+detect navigation; for an intercepted full-page navigation, it then waits up
+to 2.5 seconds for the main frame to settle before restoring the source page.
+Non-navigating cards do not consume the full click timeout. In-scope
+destinations are queued through Scrapy under its
 normal robots and scope checks; out-of-scope destinations are recorded in
 `out_of_scope_urls` and are not crawled. Pass `click_selectors` to
 `crawl_with_scrapy` to customize selectors. Generic buttons are not clicked
@@ -208,6 +218,14 @@ loaded cards, the adapter expands again until the previous card count is
 restored or the control stops making progress. The result records every click,
 including those re-expansion clicks, by page and selector; a missing control
 records zero clicks without failing the page.
+
+For a card-heavy seed/index page, set `index_click_workers` (positive integer,
+default: 1) to click disjoint card subsets using the seed page plus up to
+`N - 1` additional Playwright pages. Additional pages load and expand the
+index separately, then report their discovered destinations back to the crawl.
+Pages do not share page state, but index loads and load-more clicks can
+multiply site traffic by the worker count. Keep this opt-in and choose a count
+appropriate for site capacity.
 
 Adapter defaults are deliberately bounded:
 

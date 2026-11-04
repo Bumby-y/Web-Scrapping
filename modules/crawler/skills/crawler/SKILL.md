@@ -41,6 +41,10 @@ not crawled. Pass `click_selectors=(...)` to customize this; avoid generic
 buttons unless their click behavior is expected and safe. Use
 `load_more_selectors=(...)` to expand content before scanning cards; loaded
 cards are restored after navigation when needed.
+For a card-heavy seed page, `index_click_workers` can be set to any positive
+integer to click disjoint card subsets using the seed page plus up to `N - 1`
+additional pages. It is opt-in and may multiply index and load-more requests;
+honor site rate limits and use the smallest effective count.
 
 ## Scope, identity, and limits
 
@@ -79,9 +83,15 @@ The optional Playwright download handler uses headless Chromium with bounded
 contexts and pages and a 15-second navigation timeout. Do not describe the
 core itself as performing network access.
 
+The standalone workflow's JSON output includes a `pages` array of URL/title
+pairs. Titles come from the downloaded or rendered document; unavailable
+titles are `null`.
+
 ## Integration boundary
 
 Keep Playwright optional and ordinary HTTP as the default. Use the crawler
 workflow documented in `workflows/crawler/README.md` to run a standalone
 bounded crawl and save its result JSON. The CLI's `--click-selector` option
-adds CSS selectors to the default `.child-card` selector.
+adds CSS selectors to the default `.child-card` selector. Its
+`--index-click-workers` option requires `--render-javascript` and records the
+configured worker count in `crawl_limits`.

@@ -1,0 +1,42 @@
+flowchart TD
+    A([Start crawl]) --> B[Normalize seed URLs]
+    B --> C{Each seed in scope?}
+    C -- No --> D[Raise ValueError]
+    C -- Yes --> E[Deduplicate seeds]
+    E --> F[Initialize FIFO frontier at depth 0<br/>and tracking sets and result lists]
+    F --> G{Frontier non-empty<br/>and attempts below max_pages?}
+    G -- No --> Z[Build CrawlResult metadata]
+    G -- Yes --> H{Elapsed-time limit reached?}
+    H -- Yes --> Z
+    H -- No --> I[Pop next URL and depth<br/>mark attempted and visited]
+    I --> J[Retrieve page]
+    J --> K{Retrieval raised<br/>or result is invalid?}
+    K -- Yes --> L[Record retrieve failure]
+    L --> G
+    K -- No --> M{Final URL provided?}
+    M -- No --> Q[Mark requested URL successful]
+    M -- Yes --> N[Normalize final URL]
+    N --> O{Final URL valid<br/>and in scope?}
+    O -- No --> P[Record redirect failure]
+    P --> G
+    O -- Yes --> Q
+    Q --> R{Elapsed-time limit reached?}
+    R -- Yes --> G
+    R -- No --> S[Discover links from page content]
+    S --> T{Link discovery raises,<br/>returns a string, or yields<br/>a non-string link?}
+    T -- Yes --> U[Record discover failure<br/>keep page successful]
+    U --> G
+    T -- No --> V{More candidate links<br/>and time remains?}
+    V -- No --> G
+    V -- Yes --> W[Normalize candidate against<br/>final URL]
+    W --> X{Valid URL and in scope?}
+    X -- No --> V
+    X -- Yes --> Y[Record unique edge from<br/>final URL to target]
+    Y --> AA{Target is not a seed<br/>and not already discovered?}
+    AA -- Yes --> AB[Record discovered target]
+    AA -- No --> AC{Depth below max_depth<br/>and target is neither<br/>scheduled nor attempted?}
+    AB --> AC
+    AC -- Yes --> AD[Schedule target at depth + 1]
+    AC -- No --> V
+    AD --> V
+    Z --> AE([Return CrawlResult])

@@ -198,3 +198,30 @@ def test_scrapy_adapter_rejects_invalid_load_more_options(
             load_more_selectors=load_more_selectors,
             max_load_more_clicks=max_load_more_clicks,
         )
+
+
+@pytest.mark.parametrize(
+    ("render_javascript", "index_click_workers"),
+    [
+        (False, 2),
+        (True, 0),
+        (True, -1),
+        (True, True),
+    ],
+)
+def test_scrapy_adapter_rejects_invalid_index_click_worker_options(
+    render_javascript, index_click_workers
+):
+    with pytest.raises(ValueError):
+        crawl_with_scrapy(
+            [],
+            CrawlPolicy(
+                allowed_domains=("example.com",),
+                max_pages=1,
+                max_depth=0,
+                max_elapsed_time=1,
+            ),
+            HtmlLinkDiscoverer(),
+            render_javascript=render_javascript,
+            index_click_workers=index_click_workers,
+        )

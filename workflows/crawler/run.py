@@ -79,7 +79,7 @@ def _arguments(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
     )
     parser.add_argument(
         "-d", "--max-depth", type=int, default=5, metavar="N",
-        help="Maximum link depth (default: 4).",
+        help="Maximum link depth (default: 5).",
     )
     parser.add_argument(
         "-t", "--max-seconds", type=float, default=300, metavar="SECONDS",
@@ -127,6 +127,17 @@ def _arguments(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
         help="Maximum load-more clicks per expansion pass (default: 20).",
     )
     parser.add_argument(
+        "--index-click-workers",
+        type=int,
+        default=1,
+        metavar="N",
+        help=(
+            "Parallel browser pages for clicking index cards (positive integer, "
+            "default: 1); "
+            "requires --render-javascript."
+        ),
+    )
+    parser.add_argument(
         "-o",
         "--output",
         type=Path,
@@ -145,13 +156,36 @@ def _arguments(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
         parser.error("--load-more-selector requires --render-javascript")
     if args.max_load_more_clicks < 1:
         parser.error("--max-load-more-clicks must be a positive integer")
+    if args.index_click_workers < 1:
+        parser.error("--index-click-workers must be a positive integer")
+    if args.index_click_workers > 1 and not args.render_javascript:
+        parser.error("--index-click-workers greater than 1 requires --render-javascript")
     return args
 
 
-def _result_dict(result: CrawlResult) -> dict:
+def _result_dict(
+    result: CrawlResult,
+    policy: CrawlPolicy,
+    index_click_workers: int = 1,
+) -> dict:
     return {
+        "crawl_limits": {
+            "max_pages": policy.max_pages,
+            "max_depth": policy.max_depth,
+            "max_elapsed_time_seconds": policy.max_elapsed_time,
+            "index_click_workers": index_click_workers,
+        },
+        "termination_reason": result.termination_reason,
+        "page_timings": [
+            {"page_url": page_url, "phase": phase, "seconds": seconds}
+            for page_url, phase, seconds in result.page_timings
+        ],
         "visited_urls": list(result.visited_urls),
         "successful_urls": list(result.successful_urls),
+        "pages": [
+            {"url": url, "title": title}
+            for url, title in result.page_titles
+        ],
         "failed_urls": [
             {
                 "url": failure.url,
@@ -213,6 +247,19 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     except (TypeError, ValueError) as exc:
         raise SystemExit("Invalid crawl policy: {}".format(exc)) from exc
 
+    print(
+        "Crawl limits: pages={}, depth={}, time={} seconds.".format(
+            policy.max_pages,
+            policy.max_depth,
+            policy.max_elapsed_time,
+        )
+    )
+    print("Index card-click workers: {}.".format(args.index_click_workers))
+    print(
+        "Crawl in progress; this may take up to the configured time limit.",
+        flush=True,
+    )
+
     result = crawl_with_scrapy(
         seeds=tuple(args.seed_urls),
         policy=policy,
@@ -228,11 +275,32 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
             else None
         ),
         max_load_more_clicks=args.max_load_more_clicks,
+        index_click_workers=args.index_click_workers,
     )
-    serialized = json.dumps(_result_dict(result), indent=2)
+    timing_totals = {}
+    for _, phase, seconds in result.page_timings:
+        timing_totals[phase] = timing_totals.get(phase, 0.0) + seconds
+    serialized = json.dumps(
+        _result_dict(result, policy, args.index_click_workers),
+        indent=2,
+    )
     args.output.write_text(serialized + "\n", encoding="utf-8")
 
     print("Crawl complete.")
+    termination_messages = {
+        "frontier_exhausted": (
+            "Stop reason: no more eligible in-scope pages remain; the crawl "
+            "frontier is exhausted (depth and scope limits apply)."
+        ),
+        "page_limit": "Stop reason: maximum page limit reached.",
+        "time_limit": "Stop reason: maximum crawl time reached.",
+    }
+    print(
+        termination_messages.get(
+            result.termination_reason,
+            "Stop reason: {}".format(result.termination_reason or "unknown"),
+        )
+    )
     print(
         "Visited: {} | Successful: {} | Discovered: {} | Failed: {}".format(
             len(result.visited_urls),
@@ -241,6 +309,23 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
             len(result.failed_urls),
         )
     )
+    if timing_totals:
+        print(
+            "Timing totals are cumulative by page; request totals include "
+            "rendering and can overlap across concurrent requests."
+        )
+        print(
+            "Measured time by phase (seconds): {}".format(
+                " | ".join(
+                    "{}={:.1f}".format(phase, seconds)
+                    for phase, seconds in sorted(
+                        timing_totals.items(),
+                        key=lambda item: item[1],
+                        reverse=True,
+                    )
+                )
+            )
+        )
     if result.out_of_scope_urls:
         print(
             "Out-of-scope destinations (reported, not crawled): {}".format(

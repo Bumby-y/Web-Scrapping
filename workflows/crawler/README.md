@@ -52,6 +52,21 @@ again to restore the previous card count before continuing:
 python workflows\crawler\run.py "https://train.slsnp.hkpl.gov.hk/hkrw/en/index.html" --render-javascript --load-more-selector ".section-more-btn" --max-load-more-clicks 20 --allow-url-prefix "https://train.slsnp.hkpl.gov.hk/hkrw/en/" -o crawl-result.json
 ```
 
+For card-heavy index pages where navigating away and restoring loaded cards is
+the bottleneck, use independent browser pages to click separate card subsets:
+
+```powershell
+python workflows\crawler\run.py "https://train.slsnp.hkpl.gov.hk/hkrw/en/index.html" --render-javascript --load-more-selector ".section-more-btn" --index-click-workers 6 --allow-url-prefix "https://train.slsnp.hkpl.gov.hk/hkrw/en/" -o crawl-result.json
+```
+
+Index click workers are opt-in (default: 1) with no fixed upper bound. The seed
+page clicks one card subset; additional workers use their own pages to load
+and expand the index, then click separate subsets. Concurrent clicks never
+share a page. This can multiply index loads and load-more traffic by up to the
+worker count. Use only where authorized, and choose a count appropriate for
+the site's capacity and request policy. The configured worker count is
+recorded in `crawl_limits`.
+
 With Playwright enabled, the workflow waits up to two seconds for each
 configured click selector to become visible, then clicks matching elements.
 `.child-card` is included by default. If no match becomes visible, the report
@@ -60,7 +75,10 @@ reached by Vue-style client-side navigation are recorded. Full-page navigation i
 in-scope URLs are queued through Scrapy, where robots and crawl-scope checks
 apply, while out-of-scope destinations are reported separately and not
 crawled. Clicks do not wait for an intercepted destination page to finish
-loading. To use additional selectors, repeat `--click-selector`, such as
+loading; the crawler waits up to one second to detect navigation after each
+click and up to 2.5 seconds for an intercepted full-page navigation to settle
+before restoring the source page. To use additional selectors, repeat
+`--click-selector`, such as
 `--click-selector ".child-card" --click-selector "[role=button]"`. Generic
 buttons are not clicked by default because they may trigger unrelated actions.
 
@@ -70,9 +88,11 @@ waited for on every rendered page; a timeout is recorded as a retrieval
 failure.
 
 The crawl results, including the discovered URL list, are saved to
-`crawl-result.json` in your current terminal directory. The terminal prints
-only a short count summary and the output path. The defaults are 100 pages,
-depth 4, and 300 seconds. Use short flags to change them or choose another
+`crawl-result.json` in your current terminal directory. Before crawling, the
+terminal displays the page, depth, and time limits and a progress message. At
+completion, it explains whether the eligible in-scope frontier was exhausted
+or a page/time limit stopped the crawl. The defaults are 100 pages, depth 5,
+and 300 seconds. Use short flags to change them or choose another
 output path:
 
 ```shell
@@ -101,7 +121,7 @@ Host matching is exact. A seed on `example.com` does not implicitly authorize
 ## Limits and output
 
 - `-p`, `--max-pages`: maximum number of unique scheduled pages (default: 100).
-- `-d`, `--max-depth`: maximum link depth from each seed (default: 4).
+- `-d`, `--max-depth`: maximum link depth from each seed (default: 5).
 - `-t`, `--max-seconds`: maximum crawl duration (default: 300).
 - `--render-javascript`: opt in to Playwright Chromium rendering.
 - `--render-wait-for CSS`: wait for a CSS selector on each rendered page.
@@ -110,6 +130,9 @@ Host matching is exact. A seed on `example.com` does not implicitly authorize
 - `--max-load-more-clicks N`: maximum clicks across load-more selectors per
   expansion pass
   (default: 20).
+- `--index-click-workers N`: number of independent browser pages clicking
+  separate index-card subsets (positive integer, default: 1); requires
+  `--render-javascript`.
 - `--click-selector CSS`: click selector matches to discover client-side
   navigation; defaults to `.child-card` when rendering is enabled. Repeat to
   add selectors.
@@ -120,14 +143,36 @@ Host matching is exact. A seed on `example.com` does not implicitly authorize
 - `-o`, `--output`: JSON output path (default: `crawl-result.json` in the
   current directory).
 
-The JSON file includes visited and successful URLs, structured failures,
-in-scope discovered URLs, out-of-scope card-navigation destinations (reported
-but not crawled), unique in-scope link edges, and per-page counts of matches for
-each Playwright click selector and load-more clicks, including re-expansion
-clicks used to restore cards after navigation. The terminal also prints
-aggregate match/click totals. A load-more selector with no visible match
-records zero clicks and is not an error. Scrapy's concurrent completion order
-is not guaranteed to be deterministic.
+The JSON file includes the page, depth, and time limits used, the termination
+reason, visited and successful URLs, structured failures, in-scope discovered
+URLs, out-of-scope card-navigation destinations (reported but not crawled),
+unique in-scope link edges, and per-page counts of matches for each Playwright
+click selector and load-more clicks, including re-expansion clicks used to
+restore cards after navigation. It also includes a `pages` array with each
+successful page's URL and title:
+
+```json
+{
+  "pages": [
+    {"url": "https://example.com/", "title": "Example"},
+    {"url": "https://example.com/untitled", "title": null}
+  ]
+}
+```
+
+Titles are read from the downloaded HTML, or from the rendered document when
+Playwright is enabled. Missing or empty titles are `null`; the URL fields and
+their existing shapes remain unchanged. The terminal also prints aggregate
+match/click totals. A load-more selector with no visible match records zero
+clicks and is not an error. Scrapy's concurrent completion order is not
+guaranteed to be deterministic.
+
+`page_timings` contains per-page `request_total_seconds` and Playwright phase
+durations, including load-more clicks/content waits, card click/navigation
+detection, and returning to the source page/restoring cards. The request total
+includes rendering and can overlap other requests because Scrapy is concurrent;
+phase totals are diagnostic measurements, not mutually exclusive wall-clock
+buckets.
 
 Robots.txt compliance is always enabled. The adapter also uses a 15-second
 request timeout, up to two retries, bounded concurrency, and AutoThrottle.

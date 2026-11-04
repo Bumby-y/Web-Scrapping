@@ -2,7 +2,14 @@
 
 Generate a standard XML sitemap and a Mermaid diagram from the JSON result
 written by the crawler workflow. The sitemap includes only `successful_urls`;
-the graph includes the crawler's `link_edges`.
+the graph includes the crawler's `link_edges` and groups
+`out_of_scope_urls` as external destinations that are not crawled. Older
+crawler results without `out_of_scope_urls` remain supported.
+
+The current crawler result stores out-of-scope destinations as a flat list, so
+the graph cannot associate each external destination with its originating
+page. External destinations are shown in a separate subgraph rather than
+inventing source-to-destination edges.
 
 From the repository root, run:
 
