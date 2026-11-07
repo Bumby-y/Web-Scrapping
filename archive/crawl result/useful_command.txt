@@ -1,0 +1,54 @@
+# HKRW three-language crawl
+
+Run this from the repository root in PowerShell. It crawls the English,
+Traditional Chinese, and Simplified Chinese index pages, renders JavaScript,
+expands `.section-more-btn` controls, and clicks `.workshop-item` elements.
+The three URL prefixes keep traversal within those language sections. Results
+are written to `crawl-result.json` in the current directory.
+
+The command uses up to 6 index click workers and allows the crawl to run for up
+to 3600 seconds, with a 300-page limit. The default depth limit still applies.
+Install the crawler's Scrapy and Playwright extras and Chromium before running.
+
+Copy and paste this block into PowerShell from the repository root:
+
+```powershell
+python workflows\crawler\run.py `
+  "https://train.slsnp.hkpl.gov.hk/hkrw/en/index.html" `
+  "https://train.slsnp.hkpl.gov.hk/hkrw/tc/index.html" `
+  "https://train.slsnp.hkpl.gov.hk/hkrw/sc/index.html" `
+  --render-javascript `
+  --load-more-selector ".section-more-btn" `
+  --click-selector ".workshop-item" `
+  --allow-url-prefix "https://train.slsnp.hkpl.gov.hk/hkrw/en/" `
+  --allow-url-prefix "https://train.slsnp.hkpl.gov.hk/hkrw/tc/" `
+  --allow-url-prefix "https://train.slsnp.hkpl.gov.hk/hkrw/sc/" `
+  -o crawl-result.json `
+  --index-click-workers 6 `
+  -t 3600 `
+  -p 300
+```
+
+# SLF three-language crawl
+
+Run this from the repository root in PowerShell. It expands SLF's
+`.section-more-btn` controls and clicks `.child-card` elements, keeping
+traversal within the English, Traditional Chinese, and Simplified Chinese
+sections. It writes to `crawl-result.json`, replacing any existing output.
+
+```powershell
+python workflows\crawler\run.py `
+  "https://train.slsnp.hkpl.gov.hk/slf/en/index.html" `
+  "https://train.slsnp.hkpl.gov.hk/slf/tc/index.html" `
+  "https://train.slsnp.hkpl.gov.hk/slf/sc/index.html" `
+  --render-javascript `
+  --load-more-selector ".section-more-btn" `
+  --click-selector ".child-card" `
+  --allow-url-prefix "https://train.slsnp.hkpl.gov.hk/slf/en/" `
+  --allow-url-prefix "https://train.slsnp.hkpl.gov.hk/slf/tc/" `
+  --allow-url-prefix "https://train.slsnp.hkpl.gov.hk/slf/sc/" `
+  -o crawl-result.json `
+  --index-click-workers 6 `
+  -t 3600 `
+  -p 300
+```

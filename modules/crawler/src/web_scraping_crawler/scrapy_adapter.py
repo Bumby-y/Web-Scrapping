@@ -4,10 +4,13 @@ from __future__ import annotations
 
 import asyncio
 import hashlib
+import math
 import time
+from collections import Counter
 from collections.abc import Iterable
+from dataclasses import dataclass
 from types import SimpleNamespace
-from typing import List, Optional, Set, Tuple
+from typing import Callable, Dict, List, Optional, Set, Tuple
 from urllib.parse import urljoin, urlsplit
 
 from .crawler import (
@@ -35,6 +38,20 @@ THROTTLE_START_DELAY_SECONDS = 1.0
 THROTTLE_MAX_DELAY_SECONDS = 10.0
 
 
+@dataclass(frozen=True)
+class CrawlProgress:
+    """Point-in-time Scrapy progress counts, not a resumable checkpoint."""
+
+    status: str
+    termination_reason: Optional[str]
+    scheduled_pages: int
+    visited_urls: int
+    successful_urls: int
+    failed_urls: int
+    discovered_urls: int
+    failure_types: Dict[str, int]
+
+
 def crawl_with_scrapy(
     seeds: Iterable[str],
     policy: CrawlPolicy,
@@ -45,6 +62,8 @@ def crawl_with_scrapy(
     load_more_selectors: Optional[Iterable[str]] = None,
     max_load_more_clicks: int = 20,
     index_click_workers: int = 1,
+    progress_callback: Optional[Callable[[CrawlProgress], None]] = None,
+    progress_interval: float = 600.0,
 ) -> CrawlResult:
     """Run one standalone Scrapy crawl and return its traversal metadata.
 
@@ -53,6 +72,10 @@ def crawl_with_scrapy(
     links. ``load_more_selectors`` are clicked before ``click_selectors``;
     each is limited by ``max_load_more_clicks`` per page. Browser rendering
     requires the optional ``playwright`` extra.
+
+    If provided, ``progress_callback`` receives periodic progress summaries and
+    a final summary when the spider closes. It runs on Scrapy's reactor thread
+    and should return promptly.
 
     This helper starts Scrapy's Twisted reactor and is intended for a normal
     synchronous script. The reactor cannot be restarted, so call this helper
@@ -81,6 +104,15 @@ def crawl_with_scrapy(
         raise ValueError("index_click_workers must be a positive integer")
     if index_click_workers > 1 and not render_javascript:
         raise ValueError("index_click_workers requires render_javascript=True")
+    if progress_callback is not None and not callable(progress_callback):
+        raise ValueError("progress_callback must be callable")
+    if (
+        isinstance(progress_interval, bool)
+        or not isinstance(progress_interval, (int, float))
+        or not math.isfinite(progress_interval)
+        or progress_interval <= 0
+    ):
+        raise ValueError("progress_interval must be a finite positive number")
     if click_selectors is None:
         normalized_click_selectors = (
             DEFAULT_PLAYWRIGHT_CLICK_SELECTORS if render_javascript else ()
@@ -795,6 +827,7 @@ def crawl_with_scrapy(
         def __init__(self, crawler):
             self.crawler = crawler
             self.call = None
+            self.progress_call = None
 
         @classmethod
         def from_crawler(cls, crawler):
@@ -815,6 +848,18 @@ def crawl_with_scrapy(
                 self.close_for_time_limit,
                 spider,
             )
+            if progress_callback is not None:
+                self.progress_call = reactor.callLater(
+                    progress_interval, self.report_progress, spider
+                )
+
+        def report_progress(self, spider):
+            from twisted.internet import reactor
+
+            self.progress_call = reactor.callLater(
+                progress_interval, self.report_progress, spider
+            )
+            progress_callback(spider.progress("running"))
 
         def close_for_time_limit(self, spider):
             engine = spider.crawler.engine
@@ -833,6 +878,8 @@ def crawl_with_scrapy(
         def spider_closed(self, spider, reason):
             if self.call is not None and self.call.active():
                 self.call.cancel()
+            if self.progress_call is not None and self.progress_call.active():
+                self.progress_call.cancel()
             rejected_for_page_limit = spider.crawler.stats.get_value(
                 "crawler/pages_rejected_limit", 0
             )
@@ -844,6 +891,8 @@ def crawl_with_scrapy(
                 spider._crawl_termination_reason = "frontier_exhausted"
             else:
                 spider._crawl_termination_reason = "stopped:{}".format(reason)
+            if progress_callback is not None:
+                progress_callback(spider.progress("completed"))
 
     class PolicySpider(Spider):
         name = "bounded_policy_crawl"
@@ -1240,6 +1289,22 @@ def crawl_with_scrapy(
                 termination_reason=self._crawl_termination_reason,
                 page_timings=tuple(self._page_timings),
                 link_references=tuple(self._link_references),
+            )
+
+        def progress(self, status: str) -> CrawlProgress:
+            return CrawlProgress(
+                status=status,
+                termination_reason=self._crawl_termination_reason,
+                scheduled_pages=self.crawler.stats.get_value(
+                    "crawler/scheduled_pages", 0
+                ),
+                visited_urls=len(self._visited),
+                successful_urls=len(self._successful),
+                failed_urls=len(self._failures),
+                discovered_urls=len(self._discovered),
+                failure_types=dict(
+                    Counter(failure.error_type for failure in self._failures)
+                ),
             )
 
         def _request(self, url: str, depth: int):

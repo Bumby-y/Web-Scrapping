@@ -4,13 +4,18 @@ from __future__ import annotations
 
 import argparse
 import json
+import logging
 import sys
+from datetime import datetime, timezone
 from pathlib import Path
+from time import perf_counter
 from typing import Optional, Sequence
 from urllib.parse import urlsplit
+from uuid import uuid4
 
 from web_scraping_crawler import (
     CrawlPolicy,
+    CrawlProgress,
     CrawlResult,
     HTMLLinkDiscoverer,
     crawl_with_scrapy,
@@ -118,8 +123,15 @@ def _arguments(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
         "-o",
         "--output",
         type=Path,
-        default=Path("crawl-result.json"),
-        help="Write the JSON result to this file (default: crawl-result.json).",
+        default=Path("output") / "crawler" / "crawl-result.json",
+        help="Write the JSON result to this file (default: output/crawler/crawl-result.json).",
+    )
+    parser.add_argument(
+        "--snapshot-interval",
+        type=float,
+        default=600.0,
+        metavar="SECONDS",
+        help="Seconds between progress snapshots (default: 600).",
     )
     args = parser.parse_args(argv)
     if args.render_wait_for is not None:
@@ -137,6 +149,8 @@ def _arguments(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
         parser.error("--index-click-workers must be a positive integer")
     if args.index_click_workers > 1 and not args.render_javascript:
         parser.error("--index-click-workers greater than 1 requires --render-javascript")
+    if not 0 < args.snapshot_interval < float("inf"):
+        parser.error("--snapshot-interval must be a finite positive number")
     return args
 
 
@@ -243,10 +257,56 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         )
     )
     print("Index card-click workers: {}.".format(args.index_click_workers))
+    args.output.parent.mkdir(parents=True, exist_ok=True)
+    snapshot_dir = args.output.parent / "snapshots" / uuid4().hex
+    snapshot_dir.mkdir(parents=True)
+    print("Progress snapshots: {}".format(snapshot_dir.resolve()))
     print(
         "Crawl in progress; this may take up to the configured time limit.",
         flush=True,
     )
+
+    started_at = datetime.now(timezone.utc)
+    started_counter = perf_counter()
+    snapshot_number = 0
+
+    def save_progress(progress: CrawlProgress) -> None:
+        nonlocal snapshot_number
+        snapshot_number += 1
+        timestamp = datetime.now(timezone.utc)
+        snapshot = {
+            "status": progress.status,
+            "termination_reason": progress.termination_reason,
+            "started_at": started_at.isoformat(),
+            "snapshot_at": timestamp.isoformat(),
+            "elapsed_seconds": perf_counter() - started_counter,
+            "crawl_limits": {
+                "max_pages": policy.max_pages,
+                "max_depth": policy.max_depth,
+                "max_elapsed_time_seconds": policy.max_elapsed_time,
+                "index_click_workers": args.index_click_workers,
+            },
+            "counts": {
+                "scheduled_pages": progress.scheduled_pages,
+                "visited_urls": progress.visited_urls,
+                "successful_urls": progress.successful_urls,
+                "failed_urls": progress.failed_urls,
+                "discovered_urls": progress.discovered_urls,
+            },
+            "failure_types": progress.failure_types,
+        }
+        path = snapshot_dir / "snapshot-{:06d}.json".format(snapshot_number)
+        temporary_path = path.with_suffix(".tmp")
+        try:
+            try:
+                temporary_path.write_text(
+                    json.dumps(snapshot, indent=2) + "\n", encoding="utf-8"
+                )
+                temporary_path.replace(path)
+            finally:
+                temporary_path.unlink(missing_ok=True)
+        except OSError:
+            logging.exception("Could not write crawl progress snapshot %s", path)
 
     result = crawl_with_scrapy(
         seeds=tuple(args.seed_urls),
@@ -264,17 +324,25 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         ),
         max_load_more_clicks=args.max_load_more_clicks,
         index_click_workers=args.index_click_workers,
+        progress_callback=save_progress,
+        progress_interval=args.snapshot_interval,
     )
+    elapsed_seconds = perf_counter() - started_counter
+    finished_at = datetime.now(timezone.utc)
     timing_totals = {}
     for _, phase, seconds in result.page_timings:
         timing_totals[phase] = timing_totals.get(phase, 0.0) + seconds
-    serialized = json.dumps(
-        _result_dict(result, policy, args.index_click_workers),
-        indent=2,
-    )
+    result_data = _result_dict(result, policy, args.index_click_workers)
+    result_data["crawl_timing"] = {
+        "started_at": started_at.isoformat(),
+        "finished_at": finished_at.isoformat(),
+        "elapsed_seconds": elapsed_seconds,
+    }
+    serialized = json.dumps(result_data, indent=2)
     args.output.write_text(serialized + "\n", encoding="utf-8")
 
     print("Crawl complete.")
+    print("Crawl wall-clock duration: {:.2f} seconds.".format(elapsed_seconds))
     termination_messages = {
         "frontier_exhausted": (
             "Stop reason: no more eligible in-scope pages remain; the crawl "

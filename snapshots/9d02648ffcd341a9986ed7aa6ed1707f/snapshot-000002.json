@@ -1,0 +1,23 @@
+{
+  "status": "running",
+  "termination_reason": null,
+  "started_at": "2026-11-06T05:25:28.798668+00:00",
+  "snapshot_at": "2026-11-06T05:45:30.868665+00:00",
+  "elapsed_seconds": 1202.070018999977,
+  "crawl_limits": {
+    "max_pages": 300,
+    "max_depth": 5,
+    "max_elapsed_time_seconds": 3600.0,
+    "index_click_workers": 6
+  },
+  "counts": {
+    "scheduled_pages": 114,
+    "visited_urls": 66,
+    "successful_urls": 38,
+    "failed_urls": 28,
+    "discovered_urls": 111
+  },
+  "failure_types": {
+    "TimeoutError": 28
+  }
+}

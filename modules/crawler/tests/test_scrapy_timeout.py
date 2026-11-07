@@ -53,6 +53,7 @@ class LinkDiscoverer:
     def discover_links(self, content):
         return []
 
+progress = []
 result = crawl_with_scrapy(
     [ROOT],
     CrawlPolicy(
@@ -62,8 +63,12 @@ result = crawl_with_scrapy(
         max_elapsed_time=0.5,
     ),
     LinkDiscoverer(),
+    progress_callback=lambda item: progress.append(
+        {"status": item.status, "termination_reason": item.termination_reason}
+    ),
+    progress_interval=0.1,
 )
-print(json.dumps({"visited_urls": result.visited_urls}))
+print(json.dumps({"visited_urls": result.visited_urls, "progress": progress}))
 """.replace("ROOT", repr(root))
 
     try:
@@ -85,3 +90,8 @@ print(json.dumps({"visited_urls": result.visited_urls}))
     assert "/" in requests
     result = json.loads(completed.stdout.strip().splitlines()[-1])
     assert root in result["visited_urls"]
+    assert any(item["status"] == "running" for item in result["progress"])
+    assert result["progress"][-1] == {
+        "status": "completed",
+        "termination_reason": "time_limit",
+    }

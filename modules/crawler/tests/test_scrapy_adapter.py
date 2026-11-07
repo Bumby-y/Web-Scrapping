@@ -247,3 +247,19 @@ def test_scrapy_adapter_rejects_invalid_index_click_worker_options(
             render_javascript=render_javascript,
             index_click_workers=index_click_workers,
         )
+
+
+@pytest.mark.parametrize("interval", [0, -1, True, float("inf"), float("nan")])
+def test_scrapy_adapter_rejects_invalid_progress_intervals(interval):
+    with pytest.raises(ValueError, match="progress_interval"):
+        crawl_with_scrapy(
+            [],
+            CrawlPolicy(
+                allowed_domains=("example.com",),
+                max_pages=1,
+                max_depth=0,
+                max_elapsed_time=1,
+            ),
+            HtmlLinkDiscoverer(),
+            progress_interval=interval,
+        )

@@ -150,6 +150,11 @@ run the core's separate in-memory frontier. It shares the core's scope and URL
 identity rules and accepts the same `CrawlPolicy`. The link discoverer receives
 the downloaded response body as a string.
 
+The optional `progress_callback` receives a `CrawlProgress` summary every
+`progress_interval` seconds (600 by default) and once when the spider closes.
+It runs on the reactor thread and should return promptly. The summary contains
+counts and failure types, not queued requests or a resumable checkpoint.
+
 ```python
 from parsel import Selector
 from web_scraping_crawler import CrawlPolicy, crawl_with_scrapy

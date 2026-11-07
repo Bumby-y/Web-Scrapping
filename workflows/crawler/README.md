@@ -87,8 +87,9 @@ selector (for example `--render-wait-for "#app a[href]"`). The selector is
 waited for on every rendered page; a timeout is recorded as a retrieval
 failure.
 
-The crawl results, including the discovered URL list, are saved to
-`crawl-result.json` in your current terminal directory. Before crawling, the
+The crawl results, including the discovered URL list, are saved by default to
+`output/crawler/crawl-result.json` relative to the current terminal directory.
+The workflow creates missing output directories. Before crawling, the
 terminal displays the page, depth, and time limits and a progress message. At
 completion, it explains whether the eligible in-scope frontier was exhausted
 or a page/time limit stopped the crawl. The defaults are 100 pages, depth 5,
@@ -140,8 +141,10 @@ Host matching is exact. A seed on `example.com` does not implicitly authorize
   slash-terminated URL prefix; repeat to allow multiple.
 - `-a`, `--allow-domain`: additionally authorize an exact host; repeat as
   needed.
-- `-o`, `--output`: JSON output path (default: `crawl-result.json` in the
-  current directory).
+- `-o`, `--output`: JSON output path (default:
+  `output/crawler/crawl-result.json` relative to the current directory).
+- `--snapshot-interval SECONDS`: time between progress snapshots (default:
+  600; must be finite and positive).
 
 The JSON file includes the page, depth, and time limits used, the termination
 reason, visited and successful URLs, structured failures, in-scope discovered
@@ -180,6 +183,33 @@ detection, and returning to the source page/restoring cards. The request total
 includes rendering and can overlap other requests because Scrapy is concurrent;
 phase totals are diagnostic measurements, not mutually exclusive wall-clock
 buckets.
+
+`crawl_timing` records `started_at` and `finished_at` as ISO 8601 UTC
+timestamps and `elapsed_seconds` as the wall-clock duration measured using a
+monotonic clock. The interval covers the Scrapy crawl call, including its
+startup and shutdown, but excludes argument processing, JSON writing, and the
+final summary. The duration is also printed in the terminal. The timing is
+saved only when the crawl returns successfully and the result file is written;
+existing result files do not contain this information.
+
+Progress snapshots are saved every 10 minutes by default, plus one final
+snapshot when the spider closes. They are stored alongside the result in
+`snapshots/<unique-run-id>/snapshot-000001.json`, etc.; an explicit `-o`
+changes the parent directory for both the result and snapshots. Each snapshot
+contains the run start and snapshot timestamps in UTC, elapsed seconds, status,
+limits, scheduled/visited/successful/failed/discovered counts, and failure
+counts by error type. The final snapshot also records the termination reason.
+Scheduled pages count accepted page requests, excluding redirects and retries;
+failed URLs counts failure records, so a page can appear in both successful
+and failed counts. Snapshot elapsed time is measured when the spider reports
+progress; the final result's elapsed time also includes remaining crawl
+shutdown. Snapshot writes use a temporary file and are renamed into place;
+write errors are logged without stopping the crawl.
+
+Snapshots are progress summaries, not resumable checkpoints: they do not
+include pending requests or full URL lists. The full result is still written
+only when the crawl returns successfully. A crawl interrupted before its first
+interval may have no snapshot.
 
 Robots.txt compliance is always enabled. The adapter also uses a 15-second
 request timeout, up to two retries, bounded concurrency, and AutoThrottle.

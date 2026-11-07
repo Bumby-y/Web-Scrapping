@@ -42,8 +42,9 @@ python -m playwright install chromium
 python workflows\crawler\run.py "https://train.slsnp.hkpl.gov.hk/hkrw/en/index.html" --render-javascript -p 25 -d 2
 ```
 
-The workflow writes discovered URL metadata to `crawl-result.json`; it does
-not save page bodies. Read the workflow guide for scope, robots.txt, and
+The workflow writes discovered URL metadata to
+`output/crawler/crawl-result.json` by default; it does not save page bodies.
+Read the workflow guide for progress snapshots, scope, robots.txt, and
 resource-limit details.
 
 ## Design for reuse

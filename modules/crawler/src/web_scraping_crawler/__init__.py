@@ -13,12 +13,13 @@ from .crawler import (
     Retriever,
 )
 from .html_links import HTMLLinkDiscoverer
-from .scrapy_adapter import crawl_with_scrapy
+from .scrapy_adapter import CrawlProgress, crawl_with_scrapy
 
 __all__ = [
     "CrawlFailure",
     "CrawlLinkReference",
     "CrawlPolicy",
+    "CrawlProgress",
     "CrawlResult",
     "Crawler",
     "HTMLLinkDiscoverer",
